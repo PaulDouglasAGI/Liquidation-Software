@@ -1,0 +1,27 @@
+import { NextRequest } from "next/server";
+import { prisma } from "@/lib/db";
+import { apiUser, badRequest, unauthorized } from "@/lib/api";
+import { amazonFlatFile } from "@/lib/amazon";
+import { csvResponse } from "@/lib/csv";
+import { num } from "@/lib/serialize";
+
+/** GET /api/listings/amazon?ids=a,b,c — Amazon inventory loader flat file (TSV). */
+export async function GET(req: NextRequest) {
+  if (!(await apiUser())) return unauthorized();
+  const ids = (req.nextUrl.searchParams.get("ids") ?? "").split(",").filter(Boolean);
+  if (ids.length === 0) return badRequest("Provide ids");
+  const items = await prisma.item.findMany({ where: { id: { in: ids } } });
+  if (items.length === 0) return badRequest("Items not found");
+  const tsv = amazonFlatFile(
+    items.map((i) => ({
+      sku: i.sku,
+      upc: i.upc,
+      sellPrice: num(i.sellPrice),
+      condition: i.condition,
+      conditionNotes: i.conditionNotes,
+    }))
+  );
+  const res = csvResponse(`amazon-flatfile-${new Date().toISOString().slice(0, 10)}.txt`, tsv);
+  res.headers.set("Content-Type", "text/tab-separated-values; charset=utf-8");
+  return res;
+}

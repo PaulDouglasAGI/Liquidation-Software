@@ -1,0 +1,161 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime  @default(now())
+  sessions     Session[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([token])
+}
+
+enum PalletStatus {
+  RECEIVED
+  IN_PROCESSING
+  PARTIALLY_LISTED
+  FULLY_LISTED
+  CLOSED
+}
+
+enum ProductCategory {
+  POWER_TOOLS
+  HAND_TOOLS
+  HARDWARE
+  APPLIANCES
+  MIXED
+}
+
+model Pallet {
+  id           String          @id @default(cuid())
+  palletCode   String          @unique // PAL-2026-001
+  supplier     String // Liquidation.com / B-Stock / Other
+  purchaseDate DateTime
+  totalCost    Decimal         @db.Decimal(12, 2)
+  manifestUrl  String?
+  category     ProductCategory @default(MIXED)
+  status       PalletStatus    @default(RECEIVED)
+  notes        String?
+  items        Item[]
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+}
+
+enum ItemCondition {
+  NEW
+  LIKE_NEW
+  GOOD
+  FAIR
+  FOR_PARTS
+}
+
+enum ItemStatus {
+  IN_STOCK
+  LISTED
+  SOLD
+  RETURNED
+  SCRAPPED
+}
+
+enum Platform {
+  EBAY
+  AMAZON
+  FACEBOOK
+  OTHER
+}
+
+model Item {
+  id              String          @id @default(cuid())
+  sku             String          @unique // ITM-PAL001-001
+  palletId        String
+  pallet          Pallet          @relation(fields: [palletId], references: [id], onDelete: Cascade)
+  upc             String?
+  name            String
+  brand           String?
+  category        ProductCategory @default(MIXED)
+  condition       ItemCondition   @default(GOOD)
+  conditionNotes  String?
+  msrp            Decimal?        @db.Decimal(12, 2)
+  ourCost         Decimal         @default(0) @db.Decimal(12, 2)
+  sellPrice       Decimal?        @db.Decimal(12, 2)
+  soldPrice       Decimal?        @db.Decimal(12, 2)
+  photos          String[]        @default([])
+  serialNumber    String?
+  weightLbs       Decimal?        @db.Decimal(8, 2)
+  lengthIn        Decimal?        @db.Decimal(8, 2)
+  widthIn         Decimal?        @db.Decimal(8, 2)
+  heightIn        Decimal?        @db.Decimal(8, 2)
+  storageLocation String?
+  status          ItemStatus      @default(IN_STOCK)
+  platform        Platform?
+  listingUrl      String?
+  listingIdEbay   String?
+  listingIdAmazon String?
+  dateListed      DateTime?
+  dateSold        DateTime?
+  orderId         String?
+  notes           String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([palletId])
+  @@index([status])
+  @@index([upc])
+  @@index([storageLocation])
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  date        DateTime
+  category    String // shipping supplies / storage / platform fees / other
+  description String
+  amount      Decimal  @db.Decimal(12, 2)
+  createdAt   DateTime @default(now())
+}
+
+model SupplierPurchase {
+  id           String   @id @default(cuid())
+  supplierName String
+  purchaseDate DateTime
+  manifestId   String?
+  category     String?
+  palletsBought Int     @default(1)
+  totalPaid    Decimal  @db.Decimal(12, 2)
+  notes        String?
+  createdAt    DateTime @default(now())
+}
+
+// Key-value app settings: defaultPricePct, agingDays, API credentials, etc.
+model Setting {
+  key   String @id
+  value String
+}
+
+model ListingTemplate {
+  id                  String          @id @default(cuid())
+  category            ProductCategory @unique
+  titleTemplate       String // e.g. "{brand} {name} - {condition}"
+  descriptionTemplate String
+}
+
+model StorageLocation {
+  code  String  @id // e.g. SHELF-A3
+  notes String?
+}

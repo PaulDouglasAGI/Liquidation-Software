@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0f0f0f;
+  --color-surface: #1a1a1a;
+  --color-raised: #242424;
+  --color-edge: #2c2c2c;
+  --color-accent: #f59e0b;
+  --color-ok: #22c55e;
+  --color-danger: #ef4444;
+  --color-muted: #6b7280;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-bg);
+  color: #e5e5e5;
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+
+::selection {
+  background: rgba(245, 158, 11, 0.35);
+}
+
+/* Dense scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #141414;
+}
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 0;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #444;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.6);
+}
+
+/* html5-qrcode injects its own markup; constrain it */
+#scanner-region video {
+  width: 100% !important;
+  border: 1px solid var(--color-edge);
+}
+#scanner-region img {
+  display: none;
+}
