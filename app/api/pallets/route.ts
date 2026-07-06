@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { apiUser, badRequest, parseDate, parseMoney, serverError, unauthorized } from "@/lib/api";
-import { nextPalletCode } from "@/lib/skus";
+import { createPalletWithCode } from "@/lib/skus";
 import { CATEGORIES } from "@/lib/constants";
 
 export async function POST(req: NextRequest) {
@@ -17,16 +17,13 @@ export async function POST(req: NextRequest) {
     if (totalCost === null) return badRequest("Pallet cost must be a non-negative number");
     const category = CATEGORIES.includes(b.category) ? b.category : "MIXED";
 
-    const pallet = await prisma.pallet.create({
-      data: {
-        palletCode: await nextPalletCode(),
+    const pallet = await createPalletWithCode({
         supplier,
         purchaseDate,
         totalCost,
         manifestUrl: typeof b.manifestUrl === "string" && b.manifestUrl.trim() ? b.manifestUrl.trim() : null,
         category,
         notes: typeof b.notes === "string" && b.notes.trim() ? b.notes.trim() : null,
-      },
     });
     return NextResponse.json({ id: pallet.id, palletCode: pallet.palletCode });
   } catch (e) {

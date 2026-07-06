@@ -290,6 +290,7 @@ export default function ItemEditor({ item, locations }: { item: ItemData; locati
             <button disabled={busy} className={btnCls} onClick={() => void pushEbay()}>Push to eBay</button>
             <a className={btnCls} href={`/api/listings/amazon?ids=${item.id}`}>Amazon flat file</a>
             <button disabled={busy} className={btnCls} onClick={() => void facebookExport()}>Facebook export</button>
+            <Link className={btnCls} href={`/labels?ids=${item.id}`}>Print label</Link>
             <button disabled={busy} className={btnDangerCls} onClick={() => void remove()}>Delete</button>
             {msg ? <span className={`text-[12px] ${msg.ok ? "text-ok" : "text-danger"}`}>{msg.text}</span> : null}
           </div>

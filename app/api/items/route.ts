@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { apiUser, badRequest, notFound, parseMoney, serverError, unauthorized } from "@/lib/api";
-import { nextItemSku } from "@/lib/skus";
+import { createItemWithSku } from "@/lib/skus";
 import { recalcPalletStatus } from "@/lib/pallets";
 import { getSettingNum } from "@/lib/settings";
 import { CATEGORIES, CONDITIONS } from "@/lib/constants";
@@ -38,10 +38,7 @@ export async function POST(req: NextRequest) {
       sellPrice = Math.round(msrp * pctOfMsrp) / 100;
     }
 
-    const item = await prisma.item.create({
-      data: {
-        sku: await nextItemSku(palletId),
-        palletId,
+    const item = await createItemWithSku(palletId, {
         upc: typeof b.upc === "string" && b.upc.trim() ? b.upc.replace(/\D/g, "") : null,
         name,
         brand: typeof b.brand === "string" && b.brand.trim() ? b.brand.trim() : null,
@@ -58,7 +55,6 @@ export async function POST(req: NextRequest) {
         heightIn: parseMoney(b.heightIn),
         storageLocation: typeof b.storageLocation === "string" && b.storageLocation.trim() ? b.storageLocation.trim() : null,
         notes: typeof b.notes === "string" && b.notes.trim() ? b.notes.trim() : null,
-      },
     });
     await recalcPalletStatus(palletId);
     return NextResponse.json({ id: item.id, sku: item.sku, sellPrice });

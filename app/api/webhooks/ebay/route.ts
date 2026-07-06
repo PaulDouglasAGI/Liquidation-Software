@@ -6,10 +6,16 @@ import { parseMoney } from "@/lib/api";
 /**
  * Endpoint for eBay Platform Notifications / a polling cron to report sales.
  * Accepts JSON: { listingId: string, soldPrice?: number, orderId?: string }
- * and marks the matching item SOLD. Unauthenticated by design (eBay calls it),
- * but only acts on known listing IDs.
+ * and marks the matching item SOLD.
+ *
+ * Set WEBHOOK_SECRET (env) to require an X-Webhook-Secret header; without it
+ * the endpoint stays open but only acts on known listing IDs.
  */
 export async function POST(req: NextRequest) {
+  const secret = process.env.WEBHOOK_SECRET;
+  if (secret && req.headers.get("x-webhook-secret") !== secret) {
+    return NextResponse.json({ error: "Invalid webhook secret" }, { status: 401 });
+  }
   const b = await req.json().catch(() => null);
   const listingId = typeof b?.listingId === "string" ? b.listingId : "";
   if (!listingId) return NextResponse.json({ error: "listingId required" }, { status: 400 });

@@ -169,6 +169,7 @@ export default function InventoryTable({
             </span>
           )}
           <a className={btnCls} href={`/api/listings/amazon?ids=${[...selected].join(",")}`}>Amazon flat file</a>
+          <Link className={btnCls} href={`/labels?ids=${[...selected].join(",")}`}>Print labels</Link>
         </div>
       ) : null}
       {msg ? <div className="text-[12px] text-amber-300">{msg}</div> : null}

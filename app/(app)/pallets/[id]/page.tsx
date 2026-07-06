@@ -7,6 +7,7 @@ import { money, pct, dateStr, daysSince } from "@/lib/format";
 import { label, STATUS_COLORS } from "@/lib/constants";
 import { Stat, panelCls, thCls, tdCls, monoCls, StatusBadge, btnPrimaryCls } from "@/components/ui";
 import PalletEditor from "@/components/PalletEditor";
+import ManifestImport from "@/components/ManifestImport";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +46,8 @@ export default async function PalletDetail({ params }: { params: Promise<{ id: s
         <Stat label="Revenue" value={money(revenue)} tone="ok" />
         <Stat label="Est. profit" value={money(estProfit)} sub={cost > 0 ? `ROI ${pct((estProfit / cost) * 100)}` : undefined} tone={estProfit >= 0 ? "ok" : "danger"} />
       </div>
+
+      <ManifestImport palletId={pallet.id} />
 
       <PalletEditor
         pallet={{

@@ -91,6 +91,16 @@ export default function SettingsClient({ numbers, credStatus, templates, locatio
       <TemplatesSection templates={templates} />
       <LocationsSection locations={locations} />
       <UsersSection users={users} myUserId={myUserId} />
+      <Section title="Backup & export">
+        <div className="flex flex-wrap items-center gap-2">
+          <a className={btnPrimaryCls} href="/api/backup">Download full backup (JSON)</a>
+          <a className={btnCls} href={"/api/items/export?" + new URLSearchParams({ sort: "sku" })}>Export all items (CSV)</a>
+        </div>
+        <p className="mt-2 text-[12px] text-muted">
+          The backup contains every pallet, item, expense, and purchase (no passwords, no API keys).
+          Item photo files live in the uploads folder — copy that separately if you need the pictures.
+        </p>
+      </Section>
     </div>
   );
 }

@@ -62,13 +62,14 @@ npm run start
 | Module | Where | Notes |
 |---|---|---|
 | Dashboard | `/` | Today's sales/profit, active inventory, pallet ROI table, weekly revenue/profit bars, sell-through by category, top margins, aging / unlisted / low-margin alerts |
-| Pallet intake | `/pallets` | Auto pallet codes (`PAL-2026-001`), status lifecycle auto-updates from item states, per-pallet ROI, "reallocate cost/item" |
+| Pallet intake | `/pallets` | Auto pallet codes (`PAL-2026-001`), status lifecycle auto-updates from item states, per-pallet ROI, "reallocate cost/item", **manifest CSV import** (map the columns of a Liquidation.com / B-Stock manifest, quantities expand to individual items, cost auto-spread) |
 | Item intake | `/intake` | Mobile-first: camera barcode scan, UPC auto-lookup (upcitemdb.com), big tap targets, photo upload, **offline queue** (scans queue locally and sync on reconnect) |
 | Inventory | `/inventory` | Debounced search, filters (pallet/category/condition/status/platform/date/price/aging), sortable, paginated, inline edit of price/status/location, bulk actions (mark sold, relist, change location, scrap, reprice by % of MSRP / % off / $ off), CSV export |
-| Item detail | `/items/[id]` | Full editor, live margin calc, eBay Market Check, one-click eBay listing push, Amazon flat-file export, Facebook text-block export, photo management |
+| Item detail | `/items/[id]` | Full editor, live margin calc, eBay Market Check, one-click eBay listing push, Amazon flat-file export, Facebook text-block export, photo management, print label |
+| Barcode labels | `/labels` | Printable Code 128 SKU labels (2.25"×1.25", thermal- and paper-friendly) — single item or bulk from the inventory selection; scanning a label finds the item |
 | P&L | `/pnl` | Date presets + custom range, group by pallet/category/platform/day/week/month, revenue / COGS / gross / margin / expenses / net, CSV export |
 | Suppliers | `/suppliers` | Purchase log per supplier + ROI per supplier derived from pallet records |
-| Settings | `/settings` | Pricing formula, aging threshold, low-margin alert, eBay/Amazon/UPC credentials, listing templates, storage locations, team members |
+| Settings | `/settings` | Pricing formula, aging threshold, low-margin alert, eBay/Amazon/UPC credentials, listing templates, storage locations, team members, **one-click full backup** (JSON, credentials excluded) |
 
 ### Keyboard shortcuts (desktop)
 
@@ -79,7 +80,7 @@ npm run start
 - **UPC lookup** — upcitemdb.com trial endpoint works with no key; add a key in Settings for the paid tier.
 - **eBay Market Check** — needs App ID + Cert ID (enter them in Settings). Uses the Marketplace Insights API for true 90-day sold prices when your keyset has access, otherwise falls back to Browse API active listings and labels the result accordingly.
 - **eBay listing push** — Trading API `AddFixedPriceItem`; needs App ID, Cert ID, Dev ID, and a user Auth Token. Photos are passed as public URLs, so the app must be reachable from the internet for pictures to attach.
-- **eBay sold events** — `POST /api/webhooks/ebay` with `{ "listingId": "...", "soldPrice": 99.99, "orderId": "..." }` marks the matching item sold automatically.
+- **eBay sold events** — `POST /api/webhooks/ebay` with `{ "listingId": "...", "soldPrice": 99.99, "orderId": "..." }` marks the matching item sold automatically. Set `WEBHOOK_SECRET` to require an `X-Webhook-Secret` header.
 - **Amazon** — generates an inventory-loader flat file (TSV) for Seller Central upload. Direct SP-API push intentionally returns a clear error until an approved SP-API app + LWA refresh token is wired in.
 - **Facebook Marketplace** — no public API; the app generates a formatted post text block (auto-copied to clipboard) plus photo URLs for manual posting.
 

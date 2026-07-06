@@ -11,18 +11,24 @@ const PRESETS = [
   { key: "mtd", label: "This month" },
 ];
 
+// Format in LOCAL time — toISOString() shifts to UTC and can land on the
+// wrong calendar day for anyone west of Greenwich.
+function localIso(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 function presetRange(key: string): { from: string; to: string } {
   const today = new Date();
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
   switch (key) {
     case "today":
-      return { from: iso(today), to: iso(today) };
+      return { from: localIso(today), to: localIso(today) };
     case "7d":
-      return { from: iso(new Date(Date.now() - 6 * 86_400_000)), to: iso(today) };
+      return { from: localIso(new Date(Date.now() - 6 * 86_400_000)), to: localIso(today) };
     case "mtd":
-      return { from: iso(new Date(today.getFullYear(), today.getMonth(), 2)), to: iso(today) };
+      return { from: localIso(new Date(today.getFullYear(), today.getMonth(), 1)), to: localIso(today) };
     default:
-      return { from: iso(new Date(Date.now() - 29 * 86_400_000)), to: iso(today) };
+      return { from: localIso(new Date(Date.now() - 29 * 86_400_000)), to: localIso(today) };
   }
 }
 
