@@ -1,0 +1,39 @@
+# Liquidation Ops — everything in one command:
+#
+#   docker compose up -d
+#
+# then open http://localhost:3000 and follow the setup wizard.
+# Data (database + item photos) persists in named volumes across restarts.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: liqops
+      POSTGRES_PASSWORD: liqops
+      POSTGRES_DB: liquidation
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U liqops -d liquidation"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://liqops:liqops@db:5432/liquidation
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  dbdata:
+  uploads:

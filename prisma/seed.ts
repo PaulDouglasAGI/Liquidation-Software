@@ -1,55 +1,25 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { ensureDefaults } from "../lib/defaults";
 
 const prisma = new PrismaClient();
 
-const DEFAULT_DESCRIPTION = `{brand} {name}
-
-Condition: {condition}
-{conditionNotes}
-
-MSRP: {msrp}
-SKU: {sku}
-
-Sold by a small liquidation reseller. Item photos show the exact unit you will receive. Ships within 1 business day.`;
-
 async function main() {
-  // Admin user
-  const email = (process.env.SEED_ADMIN_EMAIL ?? "admin@local").toLowerCase();
-  const password = process.env.SEED_ADMIN_PASSWORD ?? "admin123";
-  await prisma.user.upsert({
-    where: { email },
-    update: {},
-    create: { email, name: "Admin", passwordHash: await bcrypt.hash(password, 10) },
-  });
-  console.log(`Admin user ready: ${email}`);
-
-  // Default settings
-  for (const [key, value] of Object.entries({
-    defaultPricePct: "50",
-    agingDays: "30",
-    lowMarginPct: "20",
-  })) {
-    await prisma.setting.upsert({ where: { key }, update: {}, create: { key, value } });
-  }
-
-  // Listing template per category
-  for (const category of ["POWER_TOOLS", "HAND_TOOLS", "HARDWARE", "APPLIANCES", "MIXED"] as const) {
-    await prisma.listingTemplate.upsert({
-      where: { category },
+  // Optional admin user — the app's first-run setup wizard (/setup) is the
+  // normal way to create the first account; seeding one is a dev convenience.
+  if (process.env.SEED_ADMIN_EMAIL) {
+    const email = process.env.SEED_ADMIN_EMAIL.toLowerCase();
+    const password = process.env.SEED_ADMIN_PASSWORD ?? "admin123";
+    await prisma.user.upsert({
+      where: { email },
       update: {},
-      create: {
-        category,
-        titleTemplate: "{brand} {name} - {condition}",
-        descriptionTemplate: DEFAULT_DESCRIPTION,
-      },
+      create: { email, name: "Admin", passwordHash: await bcrypt.hash(password, 10) },
     });
+    console.log(`Admin user ready: ${email}`);
   }
 
-  // Starter shelf codes
-  for (const code of ["SHELF-A1", "SHELF-A2", "SHELF-A3", "SHELF-B1", "SHELF-B2", "FLOOR-1"]) {
-    await prisma.storageLocation.upsert({ where: { code }, update: {}, create: { code } });
-  }
+  await ensureDefaults(prisma);
+  console.log("Default settings, templates, and locations ready");
 
   if (process.env.SEED_DEMO === "1") {
     await seedDemo();

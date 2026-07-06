@@ -10,9 +10,12 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "setup": "bash scripts/setup.sh"
   },
   "dependencies": {
+    "@fontsource-variable/inter": "^5.2.8",
+    "@fontsource-variable/jetbrains-mono": "^5.2.8",
     "@prisma/client": "^6.19.3",
     "bcryptjs": "^3.0.3",
     "html5-qrcode": "^2.3.8",
