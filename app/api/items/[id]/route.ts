@@ -27,6 +27,29 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (!existing) return notFound("Item not found");
 
     const data: Record<string, unknown> = {};
+
+    // Money fields: empty string clears the value, an unparseable or negative
+    // value is a 400 — a typo must never silently null a stored price.
+    for (const [key, labelText] of [
+      ["msrp", "MSRP"],
+      ["sellPrice", "sell price"],
+      ["soldPrice", "sold price"],
+      ["weightLbs", "weight"],
+      ["lengthIn", "length"],
+      ["widthIn", "width"],
+      ["heightIn", "height"],
+    ] as const) {
+      const raw = b[key];
+      if (raw === undefined) continue;
+      if (raw === null || raw === "") {
+        data[key] = null;
+        continue;
+      }
+      const parsed = parseMoney(raw);
+      if (parsed === null) return badRequest(`Invalid ${labelText} — enter a non-negative number`);
+      data[key] = parsed;
+    }
+
     if (b.name !== undefined) {
       const name = strOrNull(b.name);
       if (!name) return badRequest("Name cannot be empty");
@@ -37,19 +60,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (b.category !== undefined && CATEGORIES.includes(b.category)) data.category = b.category;
     if (b.condition !== undefined && CONDITIONS.includes(b.condition)) data.condition = b.condition;
     if (b.conditionNotes !== undefined) data.conditionNotes = strOrNull(b.conditionNotes);
-    if (b.msrp !== undefined) data.msrp = parseMoney(b.msrp);
     if (b.ourCost !== undefined) {
       const c = parseMoney(b.ourCost);
-      if (c === null) return badRequest("Invalid cost");
+      if (c === null) return badRequest("Invalid cost — enter a non-negative number");
       data.ourCost = c;
     }
-    if (b.sellPrice !== undefined) data.sellPrice = parseMoney(b.sellPrice);
-    if (b.soldPrice !== undefined) data.soldPrice = parseMoney(b.soldPrice);
     if (b.serialNumber !== undefined) data.serialNumber = strOrNull(b.serialNumber);
-    if (b.weightLbs !== undefined) data.weightLbs = parseMoney(b.weightLbs);
-    if (b.lengthIn !== undefined) data.lengthIn = parseMoney(b.lengthIn);
-    if (b.widthIn !== undefined) data.widthIn = parseMoney(b.widthIn);
-    if (b.heightIn !== undefined) data.heightIn = parseMoney(b.heightIn);
     if (b.storageLocation !== undefined) data.storageLocation = strOrNull(b.storageLocation);
     if (b.platform !== undefined) data.platform = PLATFORMS.includes(b.platform) ? b.platform : null;
     if (b.listingUrl !== undefined) data.listingUrl = strOrNull(b.listingUrl);
@@ -62,12 +78,21 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       if (!ITEM_STATUSES.includes(b.status)) return badRequest("Invalid status");
       data.status = b.status;
       // Stamp lifecycle dates on transitions
-      if (b.status === "LISTED" && !existing.dateListed && b.dateListed === undefined) {
-        data.dateListed = new Date();
+      if (b.status === "LISTED" && existing.status !== "LISTED") {
+        // Fresh (re)listing: restamp the aging clock and clear any previous
+        // sale so a later re-sale isn't booked on the old date/price.
+        if (b.dateListed === undefined) data.dateListed = new Date();
+        if (b.dateSold === undefined) data.dateSold = null;
+        if (b.soldPrice === undefined || b.soldPrice === "") data.soldPrice = null;
       }
       if (b.status === "SOLD") {
-        if (!existing.dateSold && b.dateSold === undefined) data.dateSold = new Date();
-        if (b.soldPrice === undefined && existing.soldPrice === null && existing.sellPrice !== null) {
+        const effectiveDateSold = b.dateSold !== undefined ? data.dateSold : existing.dateSold;
+        if (!effectiveDateSold) data.dateSold = new Date();
+        // Auto-fill revenue from the list price when no usable sold price was
+        // provided (covers the editor sending soldPrice: "" for a blank field).
+        const effectiveSoldPrice =
+          data.soldPrice !== undefined ? data.soldPrice : existing.soldPrice;
+        if (effectiveSoldPrice === null && existing.sellPrice !== null) {
           data.soldPrice = existing.sellPrice;
         }
       }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/db";
 import { recalcPalletStatus } from "@/lib/pallets";
 import { parseMoney } from "@/lib/api";
@@ -8,16 +9,27 @@ import { parseMoney } from "@/lib/api";
  * Accepts JSON: { listingId: string, soldPrice?: number, orderId?: string }
  * and marks the matching item SOLD.
  *
- * Set WEBHOOK_SECRET (env) to require an X-Webhook-Secret header; without it
- * the endpoint stays open but only acts on known listing IDs.
+ * Fails closed: WEBHOOK_SECRET must be set and sent as X-Webhook-Secret.
+ * (eBay item IDs are public, so an unauthenticated endpoint would let anyone
+ * rewrite sales data.)
  */
 export async function POST(req: NextRequest) {
   const secret = process.env.WEBHOOK_SECRET;
-  if (secret && req.headers.get("x-webhook-secret") !== secret) {
+  if (!secret) {
+    return NextResponse.json(
+      { error: "Webhook disabled: set WEBHOOK_SECRET and send it as the X-Webhook-Secret header" },
+      { status: 503 }
+    );
+  }
+  const provided = req.headers.get("x-webhook-secret") ?? "";
+  const a = Buffer.from(provided);
+  const b = Buffer.from(secret);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) {
     return NextResponse.json({ error: "Invalid webhook secret" }, { status: 401 });
   }
-  const b = await req.json().catch(() => null);
-  const listingId = typeof b?.listingId === "string" ? b.listingId : "";
+
+  const body = await req.json().catch(() => null);
+  const listingId = typeof body?.listingId === "string" ? body.listingId : "";
   if (!listingId) return NextResponse.json({ error: "listingId required" }, { status: 400 });
 
   const item = await prisma.item.findFirst({ where: { listingIdEbay: listingId } });
@@ -28,9 +40,9 @@ export async function POST(req: NextRequest) {
     where: { id: item.id },
     data: {
       status: "SOLD",
-      soldPrice: parseMoney(b.soldPrice) ?? item.sellPrice,
+      soldPrice: parseMoney(body.soldPrice) ?? item.sellPrice,
       dateSold: new Date(),
-      orderId: typeof b.orderId === "string" ? b.orderId : null,
+      orderId: typeof body.orderId === "string" ? body.orderId : null,
       platform: "EBAY",
     },
   });

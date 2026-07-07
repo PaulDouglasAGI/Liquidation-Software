@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { thCls, tdCls, monoCls, btnCls, panelCls, inputNarrowCls } from "@/components/ui";
@@ -43,6 +43,16 @@ export default function InventoryTable({
   const router = useRouter();
   const searchParams = useSearchParams();
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const paramsKey = searchParams.toString();
+  const lastParamsKey = useRef(paramsKey);
+  // Changing page or filters must drop the selection — otherwise bulk actions
+  // silently hit items selected on a previous, no-longer-visible page.
+  useEffect(() => {
+    if (lastParamsKey.current !== paramsKey) {
+      lastParamsKey.current = paramsKey;
+      setSelected(new Set());
+    }
+  }, [paramsKey]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [repriceMode, setRepriceMode] = useState<"" | "pctMsrp" | "pctOff" | "flatOff">("");

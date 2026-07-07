@@ -37,6 +37,16 @@ export default function InventoryFilters({
     };
   }, [q]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Sync the box when the URL changes underneath us (e.g. "Clear")
+  const urlQ = params.q ?? "";
+  const lastUrlQ = useRef(urlQ);
+  useEffect(() => {
+    if (lastUrlQ.current !== urlQ) {
+      lastUrlQ.current = urlQ;
+      setQ(urlQ);
+    }
+  }, [urlQ]);
+
   const sel = (key: string, options: { value: string; text: string }[], placeholder: string) => (
     <select
       className={selectNarrowCls + " w-auto"}
@@ -66,8 +76,9 @@ export default function InventoryFilters({
       {sel("platform", PLATFORMS.map((p) => ({ value: p, text: label(p) })), "Platform")}
       <input type="date" className={inputNarrowCls + " w-auto"} value={params.dateFrom ?? ""} onChange={(e) => apply({ dateFrom: e.target.value })} title="Received from" />
       <input type="date" className={inputNarrowCls + " w-auto"} value={params.dateTo ?? ""} onChange={(e) => apply({ dateTo: e.target.value })} title="Received to" />
-      <input type="number" className={inputNarrowCls + " w-20 font-mono"} placeholder="$ min" defaultValue={params.priceMin ?? ""} onBlur={(e) => apply({ priceMin: e.target.value })} />
-      <input type="number" className={inputNarrowCls + " w-20 font-mono"} placeholder="$ max" defaultValue={params.priceMax ?? ""} onBlur={(e) => apply({ priceMax: e.target.value })} />
+      {/* key remounts the uncontrolled inputs when the URL param changes (e.g. Clear) */}
+      <input key={"min" + (params.priceMin ?? "")} type="number" className={inputNarrowCls + " w-20 font-mono"} placeholder="$ min" defaultValue={params.priceMin ?? ""} onBlur={(e) => apply({ priceMin: e.target.value })} />
+      <input key={"max" + (params.priceMax ?? "")} type="number" className={inputNarrowCls + " w-20 font-mono"} placeholder="$ max" defaultValue={params.priceMax ?? ""} onBlur={(e) => apply({ priceMax: e.target.value })} />
       <label className="flex cursor-pointer items-center gap-1 text-[12px] text-zinc-300">
         <input type="checkbox" checked={params.aging === "1"} onChange={(e) => apply({ aging: e.target.checked ? "1" : "" })} />
         Aging only

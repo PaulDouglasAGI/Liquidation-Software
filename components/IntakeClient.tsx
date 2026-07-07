@@ -93,24 +93,38 @@ export default function IntakeClient({
   const margin = profit !== null && effPrice ? (profit / effPrice) * 100 : null;
 
   // ---- offline queue ----
+  const flushing = useRef(false);
   const flushQueue = useCallback(async () => {
-    const q = readQueue();
-    if (q.length === 0) return;
-    const remaining: QueuedItem[] = [];
-    for (const entry of q) {
-      try {
-        const res = await fetch("/api/items", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(entry.payload),
-        });
-        if (!res.ok && res.status !== 400) remaining.push(entry); // 400 = bad data, drop
-      } catch {
-        remaining.push(entry);
+    // Guard against concurrent flushes (mount + 'online' event + manual tap
+    // can coincide) — without this every queued scan gets created twice.
+    if (flushing.current) return;
+    flushing.current = true;
+    try {
+      // Pop one entry at a time and persist immediately, so an interrupted
+      // flush (tab closed mid-sync) can never re-send an already-created item.
+      for (;;) {
+        const q = readQueue();
+        if (q.length === 0) break;
+        const [entry, ...rest] = q;
+        try {
+          const res = await fetch("/api/items", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(entry.payload),
+          });
+          if (res.status === 401 || res.status === 403) break; // logged out — keep queue, sync after login
+          if (res.status >= 500) break; // server trouble — retry later
+          // Created (2xx) or unfixable (400/404: bad data, pallet deleted):
+          // either way remove the entry so the queue can't jam forever.
+        } catch {
+          break; // still offline — leave the queue as-is
+        }
+        localStorage.setItem(QUEUE_KEY, JSON.stringify(rest));
       }
+    } finally {
+      flushing.current = false;
+      setQueued(readQueue().length);
     }
-    localStorage.setItem(QUEUE_KEY, JSON.stringify(remaining));
-    setQueued(remaining.length);
   }, []);
 
   useEffect(() => {

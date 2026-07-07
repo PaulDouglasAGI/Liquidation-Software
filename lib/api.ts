@@ -12,8 +12,10 @@ export const serverError = (e: unknown) =>
 export const apiUser = getUser;
 
 export function parseMoney(v: unknown): number | null {
-  if (v === null || v === undefined || v === "") return null;
-  const n = typeof v === "number" ? v : parseFloat(String(v));
+  if (v === null || v === undefined) return null;
+  if (typeof v === "string" && v.trim() === "") return null;
+  // Number(), not parseFloat(): "1O.99" must be rejected, not truncated to 1
+  const n = typeof v === "number" ? v : Number(String(v).trim().replace(/^\$/, ""));
   return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null;
 }
 

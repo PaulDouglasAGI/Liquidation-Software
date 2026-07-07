@@ -23,9 +23,22 @@ export async function POST(req: NextRequest) {
     if (!email || !email.includes("@")) return badRequest("A valid email is required");
     if (password.length < 8) return badRequest("Password must be at least 8 characters");
 
-    const user = await prisma.user.create({
-      data: { name, email, passwordHash: await hashPassword(password) },
+    // Re-check inside a serializable transaction: two concurrent first-run
+    // submissions must not both become the owner account.
+    const passwordHash = await hashPassword(password);
+    const user = await prisma.$transaction(
+      async (tx) => {
+        if ((await tx.user.count()) > 0) throw new Error("SETUP_DONE");
+        return tx.user.create({ data: { name, email, passwordHash } });
+      },
+      { isolationLevel: "Serializable" }
+    ).catch((e) => {
+      if (e instanceof Error && e.message === "SETUP_DONE") return null;
+      throw e;
     });
+    if (!user) {
+      return NextResponse.json({ error: "Setup has already been completed" }, { status: 403 });
+    }
     await ensureDefaults(prisma);
     await createSession(user.id);
     return NextResponse.json({ ok: true });

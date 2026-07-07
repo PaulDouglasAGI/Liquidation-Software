@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { inputCls, btnCls, btnPrimaryCls, labelCls, inputNarrowCls, selectNarrowCls } from "@/components/ui";
+import { localDateStr } from "@/lib/format";
 
 const EXPENSE_CATEGORIES = ["Shipping supplies", "Storage", "Platform fees", "Fuel / transport", "Equipment", "Other"];
 
@@ -11,7 +12,7 @@ export default function ExpenseForm() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [form, setForm] = useState({
-    date: new Date().toISOString().slice(0, 10),
+    date: localDateStr(new Date()),
     category: EXPENSE_CATEGORIES[0],
     description: "",
     amount: "",

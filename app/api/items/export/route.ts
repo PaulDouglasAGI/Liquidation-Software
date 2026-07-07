@@ -4,7 +4,7 @@ import { apiUser, unauthorized } from "@/lib/api";
 import { buildItemWhere } from "@/lib/itemFilters";
 import { getSettingNum } from "@/lib/settings";
 import { csvResponse, toCsv } from "@/lib/csv";
-import { daysSince } from "@/lib/format";
+import { daysSince, localDateStr } from "@/lib/format";
 
 export async function GET(req: NextRequest) {
   if (!(await apiUser())) return unauthorized();
@@ -33,8 +33,8 @@ export async function GET(req: NextRequest) {
       i.platform,
       i.storageLocation,
       i.pallet.palletCode,
-      i.dateListed?.toISOString().slice(0, 10),
-      i.dateSold?.toISOString().slice(0, 10),
+      localDateStr(i.dateListed),
+      localDateStr(i.dateSold),
       i.status === "LISTED" ? daysSince(i.dateListed) : null,
       i.orderId,
     ])

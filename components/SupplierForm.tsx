@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { inputCls, btnCls, btnPrimaryCls, labelCls, inputNarrowCls, selectNarrowCls } from "@/components/ui";
 import { SUPPLIERS } from "@/lib/constants";
+import { localDateStr } from "@/lib/format";
 
 export default function SupplierForm() {
   const router = useRouter();
@@ -12,7 +13,7 @@ export default function SupplierForm() {
   const [form, setForm] = useState({
     supplierName: SUPPLIERS[0] as string,
     supplierOther: "",
-    purchaseDate: new Date().toISOString().slice(0, 10),
+    purchaseDate: localDateStr(new Date()),
     manifestId: "",
     category: "",
     palletsBought: "1",

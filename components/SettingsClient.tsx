@@ -35,21 +35,31 @@ export default function SettingsClient({ numbers, credStatus, templates, locatio
   const router = useRouter();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
+  async function postSettings(settings: Record<string, string>, successText: string) {
+    const res = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setMsg(res.ok ? { ok: true, text: successText } : { ok: false, text: data.error ?? "Save failed" });
+    if (res.ok) router.refresh();
+  }
+
   async function saveSettings(settings: Record<string, string>) {
-    // Only send non-empty values so masked credential fields are untouched.
+    // Only send non-empty values so untouched masked credential fields
+    // don't wipe what's saved. Clearing is its own explicit action.
     const filtered = Object.fromEntries(Object.entries(settings).filter(([, v]) => v !== ""));
     if (Object.keys(filtered).length === 0) {
       setMsg({ ok: false, text: "Nothing to save" });
       return;
     }
-    const res = await fetch("/api/settings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ settings: filtered }),
-    });
-    const data = await res.json().catch(() => ({}));
-    setMsg(res.ok ? { ok: true, text: "Settings saved" } : { ok: false, text: data.error ?? "Save failed" });
-    if (res.ok) router.refresh();
+    await postSettings(filtered, "Settings saved");
+  }
+
+  /** Deletes the stored values so env-var fallbacks (or unset) apply again. */
+  async function clearSettings(keys: string[]) {
+    await postSettings(Object.fromEntries(keys.map((k) => [k, ""])), "Saved credentials cleared");
   }
 
   return (
@@ -70,6 +80,7 @@ export default function SettingsClient({ numbers, credStatus, templates, locatio
         ]}
         credStatus={credStatus}
         onSave={saveSettings}
+        onClear={clearSettings}
       />
       <CredsSection
         title="Amazon SP-API credentials"
@@ -81,12 +92,14 @@ export default function SettingsClient({ numbers, credStatus, templates, locatio
         ]}
         credStatus={credStatus}
         onSave={saveSettings}
+        onClear={clearSettings}
       />
       <CredsSection
         title="UPC lookup (upcitemdb.com)"
         fields={[["upc.apiKey", "API key (optional — trial endpoint used when empty)"]]}
         credStatus={credStatus}
         onSave={saveSettings}
+        onClear={clearSettings}
       />
       <TemplatesSection templates={templates} />
       <LocationsSection locations={locations} />
@@ -133,13 +146,16 @@ function CredsSection({
   fields,
   credStatus,
   onSave,
+  onClear,
 }: {
   title: string;
   fields: [string, string][];
   credStatus: Record<string, CredStatus>;
   onSave: (s: Record<string, string>) => Promise<void>;
+  onClear: (keys: string[]) => Promise<void>;
 }) {
   const [form, setForm] = useState<Record<string, string>>(Object.fromEntries(fields.map(([k]) => [k, ""])));
+  const anySaved = fields.some(([k]) => credStatus[k] === "db");
   return (
     <Section title={title}>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -162,7 +178,21 @@ function CredsSection({
           </div>
         ))}
       </div>
-      <button className={btnPrimaryCls + " mt-3"} onClick={() => void onSave(form)}>Save credentials</button>
+      <div className="mt-3 flex items-center gap-2">
+        <button className={btnPrimaryCls} onClick={() => void onSave(form)}>Save credentials</button>
+        {anySaved ? (
+          <button
+            className={btnCls}
+            onClick={() => {
+              if (confirm("Remove the saved values? Environment variables (if set) apply again.")) {
+                void onClear(fields.map(([k]) => k));
+              }
+            }}
+          >
+            Clear saved
+          </button>
+        ) : null}
+      </div>
     </Section>
   );
 }

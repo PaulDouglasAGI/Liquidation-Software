@@ -22,6 +22,13 @@ export interface PnlReport {
   net: number;
 }
 
+// Bucket in SERVER-LOCAL time to match parseRange and the dashboard's
+// "today" — toISOString() would shift late-evening sales into the next day.
+function localDate(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 function bucketKey(groupBy: PnlGroupBy, item: { dateSold: Date | null; palletCode: string; category: string; platform: string | null }): string {
   const d = item.dateSold ?? new Date();
   switch (groupBy) {
@@ -32,15 +39,16 @@ function bucketKey(groupBy: PnlGroupBy, item: { dateSold: Date | null; palletCod
     case "platform":
       return item.platform ? label(item.platform) : "Unassigned";
     case "day":
-      return d.toISOString().slice(0, 10);
+      return localDate(d);
     case "week": {
       const monday = new Date(d);
+      monday.setHours(0, 0, 0, 0);
       const day = monday.getDay() === 0 ? 6 : monday.getDay() - 1;
       monday.setDate(monday.getDate() - day);
-      return `Week of ${monday.toISOString().slice(0, 10)}`;
+      return `Week of ${localDate(monday)}`;
     }
     case "month":
-      return d.toISOString().slice(0, 7);
+      return localDate(d).slice(0, 7);
   }
 }
 

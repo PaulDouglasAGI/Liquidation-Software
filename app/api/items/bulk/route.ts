@@ -34,13 +34,25 @@ export async function POST(req: NextRequest) {
         }
         break;
       }
-      case "relist":
       case "markListed": {
-        await prisma.item.updateMany({
+        // Non-destructive: only lifts unlisted stock to LISTED. Never touches
+        // SOLD items (that would erase sale history) or restamps items already
+        // listed (that would reset their aging clock).
+        const res = await prisma.item.updateMany({
+          where: { id: { in: ids }, status: "IN_STOCK" },
+          data: { status: "LISTED", dateListed: new Date() },
+        });
+        updated = res.count;
+        break;
+      }
+      case "relist": {
+        // Explicitly destructive: puts items back on the market as a fresh
+        // listing, clearing any previous sale.
+        const res = await prisma.item.updateMany({
           where: { id: { in: ids } },
           data: { status: "LISTED", dateListed: new Date(), dateSold: null, soldPrice: null },
         });
-        updated = items.length;
+        updated = res.count;
         break;
       }
       case "changeLocation": {

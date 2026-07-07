@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { readFile } from "fs/promises";
-import { apiUser, notFound, unauthorized } from "@/lib/api";
+import { notFound } from "@/lib/api";
 import { resolveUploadPath } from "@/lib/uploads";
 
 const MIME: Record<string, string> = {
@@ -11,8 +11,10 @@ const MIME: Record<string, string> = {
   ".gif": "image/gif",
 };
 
+// Deliberately unauthenticated: eBay and Facebook must be able to fetch photo
+// URLs when a listing is pushed. Paths act as capability URLs — they contain
+// the item's cuid plus a random hex filename, so they are not guessable.
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
-  if (!(await apiUser())) return unauthorized();
   const { path: parts } = await params;
   const rel = parts.join("/");
   const full = resolveUploadPath(rel);

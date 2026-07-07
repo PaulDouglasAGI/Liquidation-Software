@@ -138,6 +138,15 @@ const EBAY_CATEGORY: Record<string, string> = {
 const xmlEscape = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
+// Round to whole ounces FIRST, then carry — 2.99 lbs must become 3 lbs 0 oz,
+// not 2 lbs 16 oz (eBay rejects WeightMinor >= 16).
+function buildWeightXml(weightLbs: number): string {
+  const totalOz = Math.round(weightLbs * 16);
+  const major = Math.floor(totalOz / 16);
+  const minor = totalOz % 16;
+  return `<ShippingPackageDetails><WeightMajor unit="lbs">${major}</WeightMajor><WeightMinor unit="oz">${minor}</WeightMinor></ShippingPackageDetails>`;
+}
+
 export interface EbayListingInput {
   title: string;
   description: string;
@@ -158,6 +167,8 @@ export async function addFixedPriceItem(input: EbayListingInput): Promise<{ item
     );
   }
   const title = input.title.slice(0, 80);
+  // "]]>" inside the description would terminate the CDATA section early
+  const description = input.description.replace(/\]\]>/g, "]]]]><![CDATA[>");
   const pictures = input.photoUrls
     .filter((u) => u.startsWith("http"))
     .slice(0, 8)
@@ -171,7 +182,7 @@ export async function addFixedPriceItem(input: EbayListingInput): Promise<{ item
   <WarningLevel>High</WarningLevel>
   <Item>
     <Title>${xmlEscape(title)}</Title>
-    <Description><![CDATA[${input.description}]]></Description>
+    <Description><![CDATA[${description}]]></Description>
     <PrimaryCategory><CategoryID>${EBAY_CATEGORY[input.category] ?? EBAY_CATEGORY.MIXED}</CategoryID></PrimaryCategory>
     <StartPrice>${input.price.toFixed(2)}</StartPrice>
     <ConditionID>${CONDITION_IDS[input.condition] ?? 3000}</ConditionID>
@@ -195,7 +206,7 @@ export async function addFixedPriceItem(input: EbayListingInput): Promise<{ item
         <ShippingService>USPSPriority</ShippingService>
       </ShippingServiceOptions>
     </ShippingDetails>
-    ${input.weightLbs ? `<ShippingPackageDetails><WeightMajor unit="lbs">${Math.floor(input.weightLbs)}</WeightMajor><WeightMinor unit="oz">${Math.round((input.weightLbs % 1) * 16)}</WeightMinor></ShippingPackageDetails>` : ""}
+    ${input.weightLbs ? buildWeightXml(input.weightLbs) : ""}
     <Site>US</Site>
   </Item>
 </AddFixedPriceItemRequest>`;

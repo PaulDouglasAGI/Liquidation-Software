@@ -80,7 +80,7 @@ npm run start
 - **UPC lookup** — upcitemdb.com trial endpoint works with no key; add a key in Settings for the paid tier.
 - **eBay Market Check** — needs App ID + Cert ID (enter them in Settings). Uses the Marketplace Insights API for true 90-day sold prices when your keyset has access, otherwise falls back to Browse API active listings and labels the result accordingly.
 - **eBay listing push** — Trading API `AddFixedPriceItem`; needs App ID, Cert ID, Dev ID, and a user Auth Token. Photos are passed as public URLs, so the app must be reachable from the internet for pictures to attach.
-- **eBay sold events** — `POST /api/webhooks/ebay` with `{ "listingId": "...", "soldPrice": 99.99, "orderId": "..." }` marks the matching item sold automatically. Set `WEBHOOK_SECRET` to require an `X-Webhook-Secret` header.
+- **eBay sold events** — `POST /api/webhooks/ebay` with `{ "listingId": "...", "soldPrice": 99.99, "orderId": "..." }` marks the matching item sold automatically. Requires `WEBHOOK_SECRET` to be set and sent as the `X-Webhook-Secret` header — the endpoint refuses to act without it (eBay item IDs are public, so an open endpoint would let anyone rewrite your sales).
 - **Amazon** — generates an inventory-loader flat file (TSV) for Seller Central upload. Direct SP-API push intentionally returns a clear error until an approved SP-API app + LWA refresh token is wired in.
 - **Facebook Marketplace** — no public API; the app generates a formatted post text block (auto-copied to clipboard) plus photo URLs for manual posting.
 

@@ -1,7 +1,10 @@
 function escapeCell(v: unknown, sep: string): string {
   if (v === null || v === undefined) return "";
-  const s = String(v);
-  if (s.includes(sep) || s.includes('"') || s.includes("\n")) {
+  let s = String(v);
+  // Formula-injection guard for spreadsheet apps: a leading =, +, or @ in
+  // user-entered text (item names, notes) would execute when opened in Excel.
+  if (/^[=+@]/.test(s)) s = `'${s}`;
+  if (s.includes(sep) || s.includes('"') || s.includes("\n") || s.includes("\r")) {
     return `"${s.replace(/"/g, '""')}"`;
   }
   return s;

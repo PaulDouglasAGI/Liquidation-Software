@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { inputCls, selectCls, btnPrimaryCls, btnCls, labelCls } from "@/components/ui";
 import { CATEGORIES, SUPPLIERS, label } from "@/lib/constants";
+import { localDateStr } from "@/lib/format";
 
 export default function PalletForm() {
   const router = useRouter();
@@ -13,7 +14,7 @@ export default function PalletForm() {
   const [form, setForm] = useState({
     supplier: SUPPLIERS[0] as string,
     supplierOther: "",
-    purchaseDate: new Date().toISOString().slice(0, 10),
+    purchaseDate: localDateStr(new Date()),
     totalCost: "",
     manifestUrl: "",
     category: "MIXED",

@@ -86,11 +86,14 @@ const SORTS: Record<string, Prisma.ItemOrderByWithRelationInput> = {
   created: { createdAt: "desc" },
 };
 
-export function buildItemOrderBy(p: ItemFilterParams): Prisma.ItemOrderByWithRelationInput {
+export function buildItemOrderBy(p: ItemFilterParams): Prisma.ItemOrderByWithRelationInput[] {
   const sort = pick(p, "sort");
   const dir = pick(p, "dir") === "asc" ? "asc" : pick(p, "dir") === "desc" ? "desc" : null;
-  const base = SORTS[sort] ?? SORTS.created;
-  if (!dir) return base;
-  const [key] = Object.keys(base);
-  return { [key]: dir } as Prisma.ItemOrderByWithRelationInput;
+  let base = SORTS[sort] ?? SORTS.created;
+  if (dir) {
+    const [key] = Object.keys(base);
+    base = { [key]: dir } as Prisma.ItemOrderByWithRelationInput;
+  }
+  // id tiebreaker keeps pagination stable when the sort column has ties
+  return [base, { id: "asc" }];
 }

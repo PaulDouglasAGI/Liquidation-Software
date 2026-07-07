@@ -47,8 +47,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         errors.push(`Row ${idx + 1}: missing product name — skipped`);
         continue;
       }
-      const qtyNum = parseInt(String(raw.qty ?? "1"), 10);
-      const qty = Number.isFinite(qtyNum) && qtyNum > 0 ? Math.min(qtyNum, MAX_QTY_PER_ROW) : 1;
+      const qtyRaw = String(raw.qty ?? "").trim();
+      const qtyNum = qtyRaw === "" ? 1 : parseInt(qtyRaw, 10);
+      if (!Number.isFinite(qtyNum) || qtyNum <= 0) {
+        errors.push(`Row ${idx + 1}: quantity "${qtyRaw}" — skipped`);
+        continue;
+      }
+      const qty = Math.min(qtyNum, MAX_QTY_PER_ROW);
       const msrp = parseMoney(raw.msrp);
       const sellPrice = msrp !== null ? Math.round(msrp * pctOfMsrp) / 100 : null;
       const conditionRaw = typeof raw.condition === "string" ? raw.condition.trim().toUpperCase().replace(/[\s-]+/g, "_") : "";
@@ -70,12 +75,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
     }
 
-    // Spread pallet cost across all items now on the pallet (manifest imports
-    // usually happen before per-item costs are known).
+    // Spread pallet cost across items (manifest imports usually happen before
+    // per-item costs are known). SOLD items keep their booked cost — changing
+    // it would retroactively rewrite P&L margins.
     const total = await prisma.item.count({ where: { palletId: id } });
     if (total > 0) {
       const per = Math.round((pallet.totalCost.toNumber() / total) * 100) / 100;
-      await prisma.item.updateMany({ where: { palletId: id }, data: { ourCost: per } });
+      await prisma.item.updateMany({
+        where: { palletId: id, status: { not: "SOLD" } },
+        data: { ourCost: per },
+      });
     }
     await recalcPalletStatus(id);
 

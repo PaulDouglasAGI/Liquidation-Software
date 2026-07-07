@@ -12,13 +12,17 @@ export async function recalcPalletStatus(palletId: string) {
   });
   if (!pallet || pallet.status === "CLOSED") return;
 
-  const [total, listedOrBeyond] = await Promise.all([
-    prisma.item.count({ where: { palletId } }),
+  // Scrapped items are written off — they shouldn't hold a pallet at
+  // "Partially Listed" forever. Returned items DO count as needing action.
+  const [total, listedOrBeyond, anyItems] = await Promise.all([
+    prisma.item.count({ where: { palletId, status: { not: "SCRAPPED" } } }),
     prisma.item.count({ where: { palletId, status: { in: ["LISTED", "SOLD"] } } }),
+    prisma.item.count({ where: { palletId } }),
   ]);
 
   let status: "RECEIVED" | "IN_PROCESSING" | "PARTIALLY_LISTED" | "FULLY_LISTED";
-  if (total === 0) status = "RECEIVED";
+  if (anyItems === 0) status = "RECEIVED";
+  else if (total === 0) status = "FULLY_LISTED"; // everything scrapped — nothing left to do
   else if (listedOrBeyond === 0) status = "IN_PROCESSING";
   else if (listedOrBeyond < total) status = "PARTIALLY_LISTED";
   else status = "FULLY_LISTED";
