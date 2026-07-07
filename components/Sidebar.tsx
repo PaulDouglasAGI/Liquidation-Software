@@ -8,8 +8,10 @@ const NAV = [
   { href: "/intake", label: "Item Intake", key: "N" },
   { href: "/inventory", label: "Inventory", key: "I" },
   { href: "/pallets", label: "Pallets", key: "P" },
+  { href: "/insights", label: "Insights", key: "G" },
   { href: "/pnl", label: "P&L", key: "L" },
   { href: "/suppliers", label: "Suppliers", key: "U" },
+  { href: "/activity", label: "Activity", key: "" },
   { href: "/settings", label: "Settings", key: "" },
 ];
 
@@ -27,7 +29,7 @@ export default function Sidebar({ userName }: { userName: string }) {
     <aside className="flex w-full shrink-0 flex-row items-center justify-between border-b border-edge bg-surface md:min-h-screen md:w-44 md:flex-col md:items-stretch md:justify-start md:border-b-0 md:border-r">
       <div className="flex items-baseline gap-1.5 px-3 py-3 md:border-b md:border-edge">
         <Link href="/" className="font-mono text-base font-bold text-accent">LIQ-OPS</Link>
-        <span className="font-mono text-[10px] text-muted">v2</span>
+        <span className="font-mono text-[10px] text-muted">v3</span>
       </div>
       <nav className="flex flex-row gap-0 overflow-x-auto md:flex-1 md:flex-col md:py-2">
         {NAV.map((n) => {

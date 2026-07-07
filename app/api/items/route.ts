@@ -5,9 +5,11 @@ import { createItemWithSku } from "@/lib/skus";
 import { recalcPalletStatus } from "@/lib/pallets";
 import { getSettingNum } from "@/lib/settings";
 import { CATEGORIES, CONDITIONS } from "@/lib/constants";
+import { logActivity } from "@/lib/activity";
 
 export async function POST(req: NextRequest) {
-  if (!(await apiUser())) return unauthorized();
+  const user = await apiUser();
+  if (!user) return unauthorized();
   try {
     const b = await req.json().catch(() => null);
     if (!b) return badRequest("Invalid JSON body");
@@ -57,6 +59,7 @@ export async function POST(req: NextRequest) {
         notes: typeof b.notes === "string" && b.notes.trim() ? b.notes.trim() : null,
     });
     await recalcPalletStatus(palletId);
+    logActivity(user.name, "item.create", `${item.sku} — ${name}`);
     return NextResponse.json({ id: item.id, sku: item.sku, sellPrice });
   } catch (e) {
     return serverError(e);

@@ -3,6 +3,7 @@ import { timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/db";
 import { recalcPalletStatus } from "@/lib/pallets";
 import { parseMoney } from "@/lib/api";
+import { logActivity } from "@/lib/activity";
 
 /**
  * Endpoint for eBay Platform Notifications / a polling cron to report sales.
@@ -47,5 +48,6 @@ export async function POST(req: NextRequest) {
     },
   });
   await recalcPalletStatus(item.palletId);
+  logActivity("eBay webhook", "item.sold", `${item.sku} marked sold via webhook`);
   return NextResponse.json({ ok: true });
 }

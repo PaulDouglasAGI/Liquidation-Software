@@ -110,6 +110,8 @@ model Item {
   listingIdAmazon String?
   dateListed      DateTime?
   dateSold        DateTime?
+  dateReturned    DateTime?
+  returnReason    String?
   orderId         String?
   notes           String?
   createdAt       DateTime        @default(now())
@@ -158,4 +160,15 @@ model ListingTemplate {
 model StorageLocation {
   code  String  @id // e.g. SHELF-A3
   notes String?
+}
+
+// Team audit trail: who did what, when.
+model ActivityLog {
+  id        String   @id @default(cuid())
+  userName  String
+  action    String // e.g. item.create, item.sold, pallet.import
+  detail    String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }

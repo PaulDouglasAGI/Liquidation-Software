@@ -33,6 +33,7 @@ export default function Shortcuts() {
         n: "/intake",
         i: "/inventory",
         p: "/pallets",
+        g: "/insights",
         d: "/",
         l: "/pnl",
         u: "/suppliers",

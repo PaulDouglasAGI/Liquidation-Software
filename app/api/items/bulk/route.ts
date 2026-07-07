@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { apiUser, badRequest, parseMoney, serverError, unauthorized } from "@/lib/api";
 import { recalcPalletStatus } from "@/lib/pallets";
+import { logActivity } from "@/lib/activity";
 
 /**
  * Bulk actions over selected items.
@@ -10,7 +11,8 @@ import { recalcPalletStatus } from "@/lib/pallets";
  *   payload?: { location?, pct?, amount?, platform? } }
  */
 export async function POST(req: NextRequest) {
-  if (!(await apiUser())) return unauthorized();
+  const user = await apiUser();
+  if (!user) return unauthorized();
   try {
     const b = await req.json().catch(() => null);
     const ids: string[] = Array.isArray(b?.ids) ? b.ids.filter((x: unknown) => typeof x === "string") : [];
@@ -66,6 +68,18 @@ export async function POST(req: NextRequest) {
         updated = items.length;
         break;
       }
+      case "setPrices": {
+        // Per-item prices, e.g. applying the Insights repricing suggestions:
+        // payload.prices = { itemId: newPrice }
+        const prices = payload.prices ?? {};
+        for (const item of items) {
+          const price = parseMoney(prices[item.id]);
+          if (price === null) continue;
+          await prisma.item.update({ where: { id: item.id }, data: { sellPrice: price } });
+          updated++;
+        }
+        break;
+      }
       case "repricePctMsrp": {
         const pctOfMsrp = parseMoney(payload.pct);
         if (pctOfMsrp === null || pctOfMsrp <= 0) return badRequest("Invalid % of MSRP");
@@ -106,6 +120,7 @@ export async function POST(req: NextRequest) {
     for (const palletId of new Set(items.map((i) => i.palletId))) {
       await recalcPalletStatus(palletId);
     }
+    if (updated > 0) logActivity(user.name, "items.bulk", `${action}: ${updated} item(s)`);
     return NextResponse.json({ ok: true, updated });
   } catch (e) {
     return serverError(e);

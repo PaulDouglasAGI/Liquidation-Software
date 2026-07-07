@@ -67,13 +67,19 @@ npm run start
 | Inventory | `/inventory` | Debounced search, filters (pallet/category/condition/status/platform/date/price/aging), sortable, paginated, inline edit of price/status/location, bulk actions (mark sold, relist, change location, scrap, reprice by % of MSRP / % off / $ off), CSV export |
 | Item detail | `/items/[id]` | Full editor, live margin calc, eBay Market Check, one-click eBay listing push, Amazon flat-file export, Facebook text-block export, photo management, print label |
 | Barcode labels | `/labels` | Printable Code 128 SKU labels (2.25"×1.25", thermal- and paper-friendly) — single item or bulk from the inventory selection; scanning a label finds the item |
+| Insights | `/insights` | Days-to-sell and MSRP-recovery by category and brand, monthly trend, return rate, and **smart repricing**: suggested cuts for aging listings (10%/20%, never below cost) applied in one click |
+| Activity | `/activity` | Team audit trail — intake, status changes, imports, listings, restores; who did what, when |
 | P&L | `/pnl` | Date presets + custom range, group by pallet/category/platform/day/week/month, revenue / COGS / gross / margin / expenses / net, CSV export |
 | Suppliers | `/suppliers` | Purchase log per supplier + ROI per supplier derived from pallet records |
-| Settings | `/settings` | Pricing formula, aging threshold, low-margin alert, eBay/Amazon/UPC credentials, listing templates, storage locations, team members, **one-click full backup** (JSON, credentials excluded) |
+| Settings | `/settings` | Pricing formula, aging threshold, low-margin alert, eBay/Amazon/UPC credentials, listing templates, storage locations, team members, **one-click full backup and restore** (move a phone install to a server in two clicks) |
 
 ### Keyboard shortcuts (desktop)
 
-`N` new item (intake) · `I` inventory · `P` pallets · `D` dashboard · `L` P&L · `U` suppliers · `/` focus search · `S` save (item editor)
+`N` new item (intake) · `I` inventory · `P` pallets · `G` insights · `D` dashboard · `L` P&L · `U` suppliers · `/` focus search · `S` save (item editor)
+
+### Returns
+
+Set an item's status to **Returned** to reverse the sale (it leaves revenue immediately); record the reason on the item, then either relist it or scrap it. Return rate is tracked on the Insights page.
 
 ## Integrations
 
@@ -98,6 +104,7 @@ npm run dev        # dev server
 npm run build      # production build
 npm run start      # production server
 npm run lint       # eslint
+npm test           # unit tests (vitest) — also run in CI on every push
 npm run db:migrate # prisma migrate dev
 npm run db:deploy  # prisma migrate deploy (production)
 npm run db:seed    # optional: seed defaults, dev admin (SEED_ADMIN_EMAIL), demo data (SEED_DEMO=1)

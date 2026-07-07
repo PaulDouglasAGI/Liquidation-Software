@@ -43,6 +43,8 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
         listingIdEbay: item.listingIdEbay,
         dateListed: item.dateListed?.toISOString() ?? null,
         dateSold: item.dateSold?.toISOString() ?? null,
+        dateReturned: item.dateReturned?.toISOString() ?? null,
+        returnReason: item.returnReason,
         orderId: item.orderId,
         notes: item.notes,
         palletId: item.pallet.id,

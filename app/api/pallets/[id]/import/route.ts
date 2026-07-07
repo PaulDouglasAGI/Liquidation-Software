@@ -5,6 +5,7 @@ import { createItemWithSku } from "@/lib/skus";
 import { recalcPalletStatus } from "@/lib/pallets";
 import { getSettingNum } from "@/lib/settings";
 import { CATEGORIES, CONDITIONS } from "@/lib/constants";
+import { logActivity } from "@/lib/activity";
 
 const MAX_ROWS = 500;
 const MAX_QTY_PER_ROW = 50;
@@ -26,7 +27,8 @@ interface ImportRow {
  * A row with qty N creates N individual items (unit-level inventory).
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if (!(await apiUser())) return unauthorized();
+  const user = await apiUser();
+  if (!user) return unauthorized();
   try {
     const { id } = await params;
     const pallet = await prisma.pallet.findUnique({ where: { id } });
@@ -88,6 +90,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
     await recalcPalletStatus(id);
 
+    if (created > 0) logActivity(user.name, "pallet.import", `${created} item(s) into ${pallet.palletCode}`);
     return NextResponse.json({ ok: true, created, skipped: errors.length, errors: errors.slice(0, 20) });
   } catch (e) {
     return serverError(e);

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { inputCls, btnCls, btnPrimaryCls, labelCls, monoCls, panelCls, thCls, tdCls, inputNarrowCls, selectNarrowCls } from "@/components/ui";
 import { CATEGORIES, label } from "@/lib/constants";
+import RestoreBackup from "@/components/RestoreBackup";
 
 type CredStatus = "db" | "env" | "unset";
 
@@ -104,13 +105,15 @@ export default function SettingsClient({ numbers, credStatus, templates, locatio
       <TemplatesSection templates={templates} />
       <LocationsSection locations={locations} />
       <UsersSection users={users} myUserId={myUserId} />
-      <Section title="Backup & export">
+      <Section title="Backup, restore & export">
         <div className="flex flex-wrap items-center gap-2">
           <a className={btnPrimaryCls} href="/api/backup">Download full backup (JSON)</a>
           <a className={btnCls} href={"/api/items/export?" + new URLSearchParams({ sort: "sku" })}>Export all items (CSV)</a>
+          <RestoreBackup />
         </div>
         <p className="mt-2 text-[12px] text-muted">
           The backup contains every pallet, item, expense, and purchase (no passwords, no API keys).
+          Restoring replaces all business data — use it to move from a phone install to a server, or to recover.
           Item photo files live in the uploads folder — copy that separately if you need the pictures.
         </p>
       </Section>

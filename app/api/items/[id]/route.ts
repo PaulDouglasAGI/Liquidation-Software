@@ -4,6 +4,7 @@ import { apiUser, badRequest, notFound, parseDate, parseMoney, serverError, unau
 import { recalcPalletStatus } from "@/lib/pallets";
 import { CATEGORIES, CONDITIONS, ITEM_STATUSES, PLATFORMS } from "@/lib/constants";
 import { toPlain } from "@/lib/serialize";
+import { logActivity } from "@/lib/activity";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -18,7 +19,8 @@ export async function GET(_req: NextRequest, { params }: Params) {
 const strOrNull = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
 
 export async function PATCH(req: NextRequest, { params }: Params) {
-  if (!(await apiUser())) return unauthorized();
+  const user = await apiUser();
+  if (!user) return unauthorized();
   try {
     const { id } = await params;
     const b = await req.json().catch(() => null);
@@ -66,6 +68,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       data.ourCost = c;
     }
     if (b.serialNumber !== undefined) data.serialNumber = strOrNull(b.serialNumber);
+    if (b.returnReason !== undefined) data.returnReason = strOrNull(b.returnReason);
     if (b.storageLocation !== undefined) data.storageLocation = strOrNull(b.storageLocation);
     if (b.platform !== undefined) data.platform = PLATFORMS.includes(b.platform) ? b.platform : null;
     if (b.listingUrl !== undefined) data.listingUrl = strOrNull(b.listingUrl);
@@ -85,6 +88,11 @@ export async function PATCH(req: NextRequest, { params }: Params) {
         if (b.dateSold === undefined) data.dateSold = null;
         if (b.soldPrice === undefined || b.soldPrice === "") data.soldPrice = null;
       }
+      if (b.status === "RETURNED" && existing.status !== "RETURNED") {
+        // Sale reversal: the item drops out of SOLD-based revenue by status;
+        // sold price/date are kept for reference alongside the return record.
+        data.dateReturned = new Date();
+      }
       if (b.status === "SOLD") {
         const effectiveDateSold = b.dateSold !== undefined ? data.dateSold : existing.dateSold;
         if (!effectiveDateSold) data.dateSold = new Date();
@@ -100,6 +108,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
     await prisma.item.update({ where: { id }, data });
     await recalcPalletStatus(existing.palletId);
+    if (data.status && data.status !== existing.status) {
+      logActivity(user.name, "item.status", `${existing.sku}: ${existing.status} → ${data.status}`);
+    }
     return NextResponse.json({ ok: true });
   } catch (e) {
     return serverError(e);
@@ -107,13 +118,15 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 }
 
 export async function DELETE(_req: NextRequest, { params }: Params) {
-  if (!(await apiUser())) return unauthorized();
+  const user = await apiUser();
+  if (!user) return unauthorized();
   try {
     const { id } = await params;
-    const existing = await prisma.item.findUnique({ where: { id }, select: { palletId: true } });
+    const existing = await prisma.item.findUnique({ where: { id }, select: { palletId: true, sku: true } });
     if (!existing) return notFound("Item not found");
     await prisma.item.delete({ where: { id } });
     await recalcPalletStatus(existing.palletId);
+    logActivity(user.name, "item.delete", existing.sku);
     return NextResponse.json({ ok: true });
   } catch (e) {
     return serverError(e);

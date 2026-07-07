@@ -3,9 +3,11 @@ import { prisma } from "@/lib/db";
 import { apiUser, badRequest, parseDate, parseMoney, serverError, unauthorized } from "@/lib/api";
 import { createPalletWithCode } from "@/lib/skus";
 import { CATEGORIES } from "@/lib/constants";
+import { logActivity } from "@/lib/activity";
 
 export async function POST(req: NextRequest) {
-  if (!(await apiUser())) return unauthorized();
+  const user = await apiUser();
+  if (!user) return unauthorized();
   try {
     const b = await req.json().catch(() => null);
     if (!b) return badRequest("Invalid JSON body");
@@ -25,6 +27,7 @@ export async function POST(req: NextRequest) {
         category,
         notes: typeof b.notes === "string" && b.notes.trim() ? b.notes.trim() : null,
     });
+    logActivity(user.name, "pallet.create", `${pallet.palletCode} — ${supplier}`);
     return NextResponse.json({ id: pallet.id, palletCode: pallet.palletCode });
   } catch (e) {
     return serverError(e);

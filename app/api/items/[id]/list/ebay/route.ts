@@ -5,12 +5,14 @@ import { addFixedPriceItem, EbayConfigError } from "@/lib/ebay";
 import { DEFAULT_DESCRIPTION_TEMPLATE, DEFAULT_TITLE_TEMPLATE, renderTemplate } from "@/lib/templates";
 import { recalcPalletStatus } from "@/lib/pallets";
 import { num } from "@/lib/serialize";
+import { logActivity } from "@/lib/activity";
 
 type Params = { params: Promise<{ id: string }> };
 
 /** One-click push of an item to eBay as a live fixed-price listing. */
 export async function POST(req: NextRequest, { params }: Params) {
-  if (!(await apiUser())) return unauthorized();
+  const user = await apiUser();
+  if (!user) return unauthorized();
   try {
     const { id } = await params;
     const item = await prisma.item.findUnique({ where: { id } });
@@ -65,6 +67,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       },
     });
     await recalcPalletStatus(item.palletId);
+    logActivity(user.name, "listing.ebay", `${item.sku} → eBay item ${itemId}`);
     return NextResponse.json({ ok: true, itemId, url });
   } catch (e) {
     if (e instanceof EbayConfigError) {

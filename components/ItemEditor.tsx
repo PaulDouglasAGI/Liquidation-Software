@@ -33,6 +33,8 @@ export interface ItemData {
   listingIdEbay: string | null;
   dateListed: string | null;
   dateSold: string | null;
+  dateReturned: string | null;
+  returnReason: string | null;
   orderId: string | null;
   notes: string | null;
   palletId: string;
@@ -69,6 +71,7 @@ export default function ItemEditor({ item, locations }: { item: ItemData; locati
     widthIn: s(item.widthIn),
     heightIn: s(item.heightIn),
     storageLocation: s(item.storageLocation),
+    returnReason: s(item.returnReason),
     status: item.status,
     platform: s(item.platform),
     listingUrl: s(item.listingUrl),
@@ -200,6 +203,7 @@ export default function ItemEditor({ item, locations }: { item: ItemData; locati
         <span className="text-[12px] text-muted">
           {item.dateListed ? `Listed ${dateStr(item.dateListed)}` : "Not listed"}
           {item.dateSold ? ` · Sold ${dateStr(item.dateSold)}` : ""}
+          {item.dateReturned ? ` · Returned ${dateStr(item.dateReturned)}` : ""}
         </span>
       </div>
 
@@ -283,6 +287,12 @@ export default function ItemEditor({ item, locations }: { item: ItemData; locati
               <label className={labelCls}>Notes</label>
               <input className={inputCls} value={form.notes} onChange={set("notes")} />
             </div>
+            {form.status === "RETURNED" || item.returnReason ? (
+              <div className="col-span-2 md:col-span-4">
+                <label className={labelCls}>Return reason</label>
+                <input className={inputCls} value={form.returnReason} onChange={set("returnReason")} placeholder="Defective, buyer remorse, wrong item…" />
+              </div>
+            ) : null}
           </div>
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
