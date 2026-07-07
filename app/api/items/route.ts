@@ -27,10 +27,14 @@ export async function POST(req: NextRequest) {
 
     const msrp = parseMoney(b.msrp);
 
-    // Default cost: pallet cost spread across items including this one.
+    // "Save ×N" for identical units — creates N individual items in one go.
+    const qtyRaw = parseInt(String(b.qty ?? "1"), 10);
+    const qty = Number.isFinite(qtyRaw) ? Math.min(Math.max(qtyRaw, 1), 50) : 1;
+
+    // Default cost: pallet cost spread across items including the new ones.
     let ourCost = parseMoney(b.ourCost);
     if (ourCost === null) {
-      ourCost = Math.round((pallet.totalCost.toNumber() / (pallet._count.items + 1)) * 100) / 100;
+      ourCost = Math.round((pallet.totalCost.toNumber() / (pallet._count.items + qty)) * 100) / 100;
     }
 
     // Default sell price: configured % of MSRP.
@@ -40,7 +44,7 @@ export async function POST(req: NextRequest) {
       sellPrice = Math.round(msrp * pctOfMsrp) / 100;
     }
 
-    const item = await createItemWithSku(palletId, {
+    const data = {
         upc: typeof b.upc === "string" && b.upc.trim() ? b.upc.replace(/\D/g, "") : null,
         name,
         brand: typeof b.brand === "string" && b.brand.trim() ? b.brand.trim() : null,
@@ -57,10 +61,16 @@ export async function POST(req: NextRequest) {
         heightIn: parseMoney(b.heightIn),
         storageLocation: typeof b.storageLocation === "string" && b.storageLocation.trim() ? b.storageLocation.trim() : null,
         notes: typeof b.notes === "string" && b.notes.trim() ? b.notes.trim() : null,
-    });
+    };
+
+    const first = await createItemWithSku(palletId, data);
+    for (let n = 1; n < qty; n++) {
+      // Serial numbers are unit-specific; only the first copy keeps it.
+      await createItemWithSku(palletId, { ...data, serialNumber: null });
+    }
     await recalcPalletStatus(palletId);
-    logActivity(user.name, "item.create", `${item.sku} — ${name}`);
-    return NextResponse.json({ id: item.id, sku: item.sku, sellPrice });
+    logActivity(user.name, "item.create", qty > 1 ? `${first.sku} ×${qty} — ${name}` : `${first.sku} — ${name}`);
+    return NextResponse.json({ id: first.id, sku: first.sku, sellPrice, count: qty });
   } catch (e) {
     return serverError(e);
   }

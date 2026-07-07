@@ -1,5 +1,5 @@
 import "server-only";
-import { getCred } from "./settings";
+import { getCred, getSetting, setSetting } from "./settings";
 
 const HOSTS = {
   PRODUCTION: { api: "https://api.ebay.com", trading: "https://api.ebay.com/ws/api.dll" },
@@ -18,6 +18,90 @@ async function creds() {
     getCred("ebay.authToken", "EBAY_AUTH_TOKEN"),
   ]);
   return { appId, certId, devId, authToken };
+}
+
+// ---------------------------------------------------------------------------
+// User OAuth (authorization-code flow) — "Connect eBay" in Settings.
+// The refresh token lives in the Setting table; short-lived user access
+// tokens are minted from it on demand and cached in memory.
+// ---------------------------------------------------------------------------
+
+const USER_SCOPES = [
+  "https://api.ebay.com/oauth/api_scope",
+  "https://api.ebay.com/oauth/api_scope/sell.inventory",
+  "https://api.ebay.com/oauth/api_scope/sell.account",
+  "https://api.ebay.com/oauth/api_scope/sell.fulfillment",
+].join(" ");
+
+function authHost() {
+  return process.env.EBAY_ENV === "SANDBOX" ? "https://auth.sandbox.ebay.com" : "https://auth.ebay.com";
+}
+
+/** Consent-screen URL for the Connect eBay button. */
+export async function oauthAuthorizeUrl(): Promise<string> {
+  const { appId } = await creds();
+  const ruName = await getCred("ebay.ruName", "EBAY_RU_NAME");
+  if (!appId || !ruName) {
+    throw new EbayConfigError(
+      "Connecting eBay needs the App ID, Cert ID, and RuName (redirect URL name) saved in Settings first."
+    );
+  }
+  const q = new URLSearchParams({
+    client_id: appId,
+    redirect_uri: ruName, // eBay uses the RuName, not a literal URL
+    response_type: "code",
+    scope: USER_SCOPES,
+  });
+  return `${authHost()}/oauth2/authorize?${q}`;
+}
+
+/** Exchanges the consent code for a refresh token and stores it. */
+export async function exchangeOAuthCode(code: string): Promise<void> {
+  const { appId, certId } = await creds();
+  const ruName = await getCred("ebay.ruName", "EBAY_RU_NAME");
+  if (!appId || !certId || !ruName) throw new EbayConfigError("eBay App ID / Cert ID / RuName not configured");
+  const res = await fetch(`${hosts().api}/identity/v1/oauth2/token`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: `Basic ${Buffer.from(`${appId}:${certId}`).toString("base64")}`,
+    },
+    body: new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: ruName }).toString(),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error(`eBay code exchange failed (${res.status}): ${await res.text()}`);
+  const data = await res.json();
+  if (!data.refresh_token) throw new Error("eBay did not return a refresh token");
+  await setSetting("ebay.refreshToken", data.refresh_token);
+  cachedUserToken = null;
+}
+
+let cachedUserToken: { token: string; expiresAt: number } | null = null;
+
+/** Short-lived user access token from the stored refresh token, or null when not connected. */
+export async function getUserAccessToken(): Promise<string | null> {
+  if (cachedUserToken && cachedUserToken.expiresAt > Date.now() + 60_000) return cachedUserToken.token;
+  const refreshToken = (await getSetting("ebay.refreshToken")) || process.env.EBAY_REFRESH_TOKEN || "";
+  if (!refreshToken) return null;
+  const { appId, certId } = await creds();
+  if (!appId || !certId) return null;
+  const res = await fetch(`${hosts().api}/identity/v1/oauth2/token`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: `Basic ${Buffer.from(`${appId}:${certId}`).toString("base64")}`,
+    },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      scope: USER_SCOPES,
+    }).toString(),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error(`eBay token refresh failed (${res.status}) — reconnect eBay in Settings`);
+  const data = await res.json();
+  cachedUserToken = { token: data.access_token, expiresAt: Date.now() + data.expires_in * 1000 };
+  return cachedUserToken.token;
 }
 
 let cachedToken: { token: string; expiresAt: number } | null = null;
@@ -161,9 +245,12 @@ export interface EbayListingInput {
 /** Create a fixed-price eBay listing via the Trading API. Returns the eBay item ID. */
 export async function addFixedPriceItem(input: EbayListingInput): Promise<{ itemId: string; url: string }> {
   const { appId, certId, devId, authToken } = await creds();
-  if (!appId || !certId || !devId || !authToken) {
+  // Prefer the OAuth connection (Settings → Connect eBay); fall back to a
+  // manually pasted legacy Auth Token.
+  const oauthToken = await getUserAccessToken().catch(() => null);
+  if (!appId || !certId || !devId || (!oauthToken && !authToken)) {
     throw new EbayConfigError(
-      "eBay Trading API credentials (App ID, Cert ID, Dev ID, Auth Token) are not configured. Add them in Settings."
+      "eBay is not connected. In Settings, save your App ID / Cert ID / Dev ID / RuName and click Connect eBay."
     );
   }
   const title = input.title.slice(0, 80);
@@ -175,9 +262,15 @@ export async function addFixedPriceItem(input: EbayListingInput): Promise<{ item
     .map((u) => `<PictureURL>${xmlEscape(u)}</PictureURL>`)
     .join("");
 
+  // With an OAuth token, credentials travel in the X-EBAY-API-IAF-TOKEN
+  // header; the legacy path embeds the Auth Token in the XML body.
+  const requesterCredentials = oauthToken
+    ? ""
+    : `<RequesterCredentials><eBayAuthToken>${xmlEscape(authToken)}</eBayAuthToken></RequesterCredentials>`;
+
   const xml = `<?xml version="1.0" encoding="utf-8"?>
 <AddFixedPriceItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">
-  <RequesterCredentials><eBayAuthToken>${xmlEscape(authToken)}</eBayAuthToken></RequesterCredentials>
+  ${requesterCredentials}
   <ErrorLanguage>en_US</ErrorLanguage>
   <WarningLevel>High</WarningLevel>
   <Item>
@@ -219,6 +312,7 @@ export async function addFixedPriceItem(input: EbayListingInput): Promise<{ item
       "X-EBAY-API-SITEID": "0",
       "X-EBAY-API-APP-NAME": appId,
       "X-EBAY-API-DEV-NAME": devId,
+      ...(oauthToken ? { "X-EBAY-API-IAF-TOKEN": oauthToken } : {}),
       "X-EBAY-API-CERT-NAME": certId,
       "Content-Type": "text/xml",
     },

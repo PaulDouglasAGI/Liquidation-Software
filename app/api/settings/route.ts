@@ -11,6 +11,8 @@ const ALLOWED_KEYS = new Set([
   "ebay.certId",
   "ebay.devId",
   "ebay.authToken",
+  "ebay.ruName",
+  "ebay.refreshToken",
   "amazon.accessKey",
   "amazon.secretKey",
   "amazon.sellerId",

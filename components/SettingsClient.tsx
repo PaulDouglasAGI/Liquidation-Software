@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { inputCls, btnCls, btnPrimaryCls, labelCls, monoCls, panelCls, thCls, tdCls, inputNarrowCls, selectNarrowCls } from "@/components/ui";
 import { CATEGORIES, label } from "@/lib/constants";
@@ -15,6 +15,7 @@ interface Props {
   locations: { code: string; notes: string | null }[];
   users: { id: string; email: string; name: string; createdAt: string }[];
   myUserId: string;
+  ebayConnected: boolean;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -32,7 +33,7 @@ function credPlaceholder(status: CredStatus) {
   return "not set";
 }
 
-export default function SettingsClient({ numbers, credStatus, templates, locations, users, myUserId }: Props) {
+export default function SettingsClient({ numbers, credStatus, templates, locations, users, myUserId, ebayConnected }: Props) {
   const router = useRouter();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -71,13 +72,15 @@ export default function SettingsClient({ numbers, credStatus, templates, locatio
       </div>
 
       <PricingSection numbers={numbers} onSave={saveSettings} />
+      <EbayConnectSection connected={ebayConnected} onDisconnect={() => clearSettings(["ebay.refreshToken"])} />
       <CredsSection
         title="eBay API credentials"
         fields={[
           ["ebay.appId", "App ID (Client ID)"],
           ["ebay.certId", "Cert ID (Client Secret)"],
           ["ebay.devId", "Dev ID"],
-          ["ebay.authToken", "Auth Token (Trading API)"],
+          ["ebay.ruName", "RuName (redirect URL name)"],
+          ["ebay.authToken", "Auth Token (legacy — not needed once connected)"],
         ]}
         credStatus={credStatus}
         onSave={saveSettings}
@@ -118,6 +121,50 @@ export default function SettingsClient({ numbers, credStatus, templates, locatio
         </p>
       </Section>
     </div>
+  );
+}
+
+function EbayConnectSection({ connected, onDisconnect }: { connected: boolean; onDisconnect: () => Promise<void> }) {
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  // Read the OAuth redirect outcome after mount (avoids hydration mismatch)
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const p = new URLSearchParams(window.location.search);
+      if (p.get("ebay") === "connected") setNotice({ ok: true, text: "eBay account connected — listing push is ready." });
+      else if (p.get("ebayError")) setNotice({ ok: false, text: p.get("ebayError")! });
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
+
+  return (
+    <Section title="eBay connection">
+      <div className="flex flex-wrap items-center gap-2">
+        {connected ? (
+          <>
+            <span className="border border-ok/50 bg-ok/10 px-2 py-1 text-[12px] text-ok">Connected</span>
+            <button
+              className={btnCls}
+              onClick={() => {
+                if (confirm("Disconnect eBay? Listing push stops working until reconnected.")) {
+                  void onDisconnect().then(() => setNotice({ ok: true, text: "eBay disconnected" }));
+                }
+              }}
+            >
+              Disconnect
+            </button>
+          </>
+        ) : (
+          <a className={btnPrimaryCls} href="/api/ebay/oauth/start">Connect eBay account</a>
+        )}
+        {notice ? <span className={`text-[12px] ${notice.ok ? "text-ok" : "text-danger"}`}>{notice.text}</span> : null}
+      </div>
+      <p className="mt-2 text-[12px] text-muted">
+        One-time setup: save your App ID, Cert ID, Dev ID, and RuName below (from developer.ebay.com →
+        your keyset), set the RuName&apos;s &quot;auth accepted URL&quot; to{" "}
+        <span className="font-mono">https://YOUR-DOMAIN/api/ebay/oauth/callback</span>, then click Connect and
+        approve. Tokens refresh automatically from then on — nothing to paste, nothing to renew.
+      </p>
+    </Section>
   );
 }
 

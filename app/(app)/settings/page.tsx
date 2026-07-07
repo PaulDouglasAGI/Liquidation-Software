@@ -10,6 +10,7 @@ const CRED_KEYS = [
   "ebay.certId",
   "ebay.devId",
   "ebay.authToken",
+  "ebay.ruName",
   "amazon.accessKey",
   "amazon.secretKey",
   "amazon.sellerId",
@@ -22,6 +23,7 @@ const ENV_FALLBACKS: Record<string, string | undefined> = {
   "ebay.certId": process.env.EBAY_CERT_ID,
   "ebay.devId": process.env.EBAY_DEV_ID,
   "ebay.authToken": process.env.EBAY_AUTH_TOKEN,
+  "ebay.ruName": process.env.EBAY_RU_NAME,
   "amazon.accessKey": process.env.AMAZON_ACCESS_KEY,
   "amazon.secretKey": process.env.AMAZON_SECRET_KEY,
   "amazon.sellerId": process.env.AMAZON_SELLER_ID,
@@ -31,7 +33,7 @@ const ENV_FALLBACKS: Record<string, string | undefined> = {
 
 export default async function SettingsPage() {
   const me = await requireUser();
-  const [settingRows, templates, locations, users, defaultPricePct, agingDays, lowMarginPct] =
+  const [settingRows, templates, locations, users, defaultPricePct, agingDays, lowMarginPct, ebayRefreshToken] =
     await Promise.all([
       prisma.setting.findMany({ where: { key: { in: [...CRED_KEYS] } }, select: { key: true, value: true } }),
       prisma.listingTemplate.findMany({ orderBy: { category: "asc" } }),
@@ -40,6 +42,7 @@ export default async function SettingsPage() {
       getSetting("defaultPricePct"),
       getSetting("agingDays"),
       getSetting("lowMarginPct"),
+      getSetting("ebay.refreshToken"),
     ]);
 
   const setKeys = new Set(settingRows.filter((r) => r.value).map((r) => r.key));
@@ -55,6 +58,7 @@ export default async function SettingsPage() {
       locations={locations.map((l) => ({ code: l.code, notes: l.notes }))}
       users={users.map((u) => ({ id: u.id, email: u.email, name: u.name, createdAt: u.createdAt.toISOString() }))}
       myUserId={me.id}
+      ebayConnected={Boolean(ebayRefreshToken || process.env.EBAY_REFRESH_TOKEN)}
     />
   );
 }

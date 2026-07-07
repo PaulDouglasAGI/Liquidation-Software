@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { inputCls, selectCls, btnCls, btnPrimaryCls, btnDangerCls, labelCls, monoCls, panelCls } from "@/components/ui";
+import { inputCls, inputNarrowCls, selectCls, selectNarrowCls, btnCls, btnPrimaryCls, btnDangerCls, labelCls, monoCls, panelCls } from "@/components/ui";
 import { CATEGORIES, CONDITIONS, ITEM_STATUSES, PLATFORMS, label } from "@/lib/constants";
 import { money, pct, dateStr } from "@/lib/format";
 
@@ -84,6 +84,8 @@ export default function ItemEditor({ item, locations }: { item: ItemData; locati
   const [market, setMarket] = useState<MarketResult | null>(null);
   const [marketMsg, setMarketMsg] = useState("");
   const [fbText, setFbText] = useState("");
+  const [selling, setSelling] = useState(false);
+  const [sellForm, setSellForm] = useState({ soldPrice: "", platform: "" });
 
   const set = (k: keyof typeof form) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
@@ -133,6 +135,34 @@ export default function ItemEditor({ item, locations }: { item: ItemData; locati
     } else {
       const data = await res.json().catch(() => ({}));
       setMsg({ ok: false, text: data.error ?? "Delete failed" });
+    }
+  }
+
+  function openQuickSell() {
+    setSellForm({
+      soldPrice: form.sellPrice || "",
+      platform: form.platform || "EBAY",
+    });
+    setSelling(true);
+  }
+
+  async function confirmQuickSell() {
+    setBusy(true);
+    setMsg(null);
+    const res = await fetch(`/api/items/${item.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "SOLD", soldPrice: sellForm.soldPrice, platform: sellForm.platform }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (res.ok) {
+      setSelling(false);
+      setMsg({ ok: true, text: "Marked sold" });
+      router.refresh();
+      setForm((f) => ({ ...f, status: "SOLD", soldPrice: sellForm.soldPrice, platform: sellForm.platform }));
+    } else {
+      setMsg({ ok: false, text: data.error ?? "Failed to mark sold" });
     }
   }
 
@@ -297,6 +327,9 @@ export default function ItemEditor({ item, locations }: { item: ItemData; locati
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button disabled={busy} className={btnPrimaryCls} onClick={() => void save()}>Save <span className="font-mono text-[10px]">(S)</span></button>
+            {form.status !== "SOLD" ? (
+              <button disabled={busy} className={btnPrimaryCls} onClick={openQuickSell}>Mark Sold</button>
+            ) : null}
             <button disabled={busy} className={btnCls} onClick={() => void pushEbay()}>Push to eBay</button>
             <a className={btnCls} href={`/api/listings/amazon?ids=${item.id}`}>Amazon flat file</a>
             <button disabled={busy} className={btnCls} onClick={() => void facebookExport()}>Facebook export</button>
@@ -304,6 +337,30 @@ export default function ItemEditor({ item, locations }: { item: ItemData; locati
             <button disabled={busy} className={btnDangerCls} onClick={() => void remove()}>Delete</button>
             {msg ? <span className={`text-[12px] ${msg.ok ? "text-ok" : "text-danger"}`}>{msg.text}</span> : null}
           </div>
+
+          {selling ? (
+            <div className="mt-3 flex flex-wrap items-end gap-2 border border-accent/50 bg-accent/5 p-2">
+              <div>
+                <label className={labelCls}>Sold price ($)</label>
+                <input
+                  autoFocus
+                  type="number" step="0.01" min="0"
+                  className={inputNarrowCls + " w-28 font-mono"}
+                  value={sellForm.soldPrice}
+                  onChange={(e) => setSellForm((f) => ({ ...f, soldPrice: e.target.value }))}
+                  onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), void confirmQuickSell())}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Platform</label>
+                <select className={selectNarrowCls + " w-auto"} value={sellForm.platform} onChange={(e) => setSellForm((f) => ({ ...f, platform: e.target.value }))}>
+                  {PLATFORMS.map((p) => <option key={p} value={p}>{label(p)}</option>)}
+                </select>
+              </div>
+              <button disabled={busy} className={btnPrimaryCls} onClick={() => void confirmQuickSell()}>Confirm sale</button>
+              <button className={btnCls} onClick={() => setSelling(false)}>Cancel</button>
+            </div>
+          ) : null}
 
           {fbText ? (
             <pre className="mt-3 whitespace-pre-wrap border border-edge bg-raised p-2 font-mono text-[12px] text-zinc-300">{fbText}</pre>

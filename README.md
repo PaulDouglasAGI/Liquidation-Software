@@ -63,7 +63,8 @@ npm run start
 |---|---|---|
 | Dashboard | `/` | Today's sales/profit, active inventory, pallet ROI table, weekly revenue/profit bars, sell-through by category, top margins, aging / unlisted / low-margin alerts |
 | Pallet intake | `/pallets` | Auto pallet codes (`PAL-2026-001`), status lifecycle auto-updates from item states, per-pallet ROI, "reallocate cost/item", **manifest CSV import** (map the columns of a Liquidation.com / B-Stock manifest, quantities expand to individual items, cost auto-spread) |
-| Item intake | `/intake` | Mobile-first: camera barcode scan, UPC auto-lookup (upcitemdb.com), big tap targets, photo upload, **offline queue** (scans queue locally and sync on reconnect) |
+| Item intake | `/intake` | Mobile-first: camera barcode scan, UPC auto-lookup, big tap targets, **Save ×N** for identical units, **continuous scan mode** (camera reopens after each save), multi-photo with thumbnails, **offline queue** (scans queue locally and sync on reconnect) |
+| Scan-to-find | everywhere | The SCAN button in the sidebar reads any SKU label or product UPC and jumps straight to the item |
 | Inventory | `/inventory` | Debounced search, filters (pallet/category/condition/status/platform/date/price/aging), sortable, paginated, inline edit of price/status/location, bulk actions (mark sold, relist, change location, scrap, reprice by % of MSRP / % off / $ off), CSV export |
 | Item detail | `/items/[id]` | Full editor, live margin calc, eBay Market Check, one-click eBay listing push, Amazon flat-file export, Facebook text-block export, photo management, print label |
 | Barcode labels | `/labels` | Printable Code 128 SKU labels (2.25"×1.25", thermal- and paper-friendly) — single item or bulk from the inventory selection; scanning a label finds the item |
@@ -84,8 +85,9 @@ Set an item's status to **Returned** to reverse the sale (it leaves revenue imme
 ## Integrations
 
 - **UPC lookup** — upcitemdb.com trial endpoint works with no key; add a key in Settings for the paid tier.
-- **eBay Market Check** — needs App ID + Cert ID (enter them in Settings). Uses the Marketplace Insights API for true 90-day sold prices when your keyset has access, otherwise falls back to Browse API active listings and labels the result accordingly.
-- **eBay listing push** — Trading API `AddFixedPriceItem`; needs App ID, Cert ID, Dev ID, and a user Auth Token. Photos are passed as public URLs, so the app must be reachable from the internet for pictures to attach.
+- **eBay: Connect with a button** — save your keyset (App ID, Cert ID, Dev ID, RuName) once in Settings, point the RuName's "auth accepted URL" at `/api/ebay/oauth/callback`, click **Connect eBay account**, approve — done. Tokens refresh automatically; nothing to paste or renew. (A legacy manual Auth Token still works as a fallback.)
+- **eBay Market Check** — uses the Marketplace Insights API for true 90-day sold prices when your keyset has access, otherwise falls back to Browse API active listings and labels the result accordingly.
+- **eBay listing push** — Trading API `AddFixedPriceItem` via the OAuth connection. Photos are passed as public URLs, so the app must be reachable from the internet for pictures to attach.
 - **eBay sold events** — `POST /api/webhooks/ebay` with `{ "listingId": "...", "soldPrice": 99.99, "orderId": "..." }` marks the matching item sold automatically. Requires `WEBHOOK_SECRET` to be set and sent as the `X-Webhook-Secret` header — the endpoint refuses to act without it (eBay item IDs are public, so an open endpoint would let anyone rewrite your sales).
 - **Amazon** — generates an inventory-loader flat file (TSV) for Seller Central upload. Direct SP-API push intentionally returns a clear error until an approved SP-API app + LWA refresh token is wired in.
 - **Facebook Marketplace** — no public API; the app generates a formatted post text block (auto-copied to clipboard) plus photo URLs for manual posting.

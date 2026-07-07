@@ -66,7 +66,9 @@ export default function IntakeClient({
       : pallets[0]?.id ?? ""
   );
   const [form, setForm] = useState(emptyForm);
-  const [photos, setPhotos] = useState<File[]>([]);
+  const [photos, setPhotos] = useState<{ file: File; url: string }[]>([]);
+  const [qty, setQty] = useState(1);
+  const [autoScan, setAutoScan] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [looking, setLooking] = useState(false);
   const [lookupMsg, setLookupMsg] = useState("");
@@ -126,6 +128,33 @@ export default function IntakeClient({
       setQueued(readQueue().length);
     }
   }, []);
+
+  // "Scan next automatically" preference survives page reloads
+  useEffect(() => {
+    const t = setTimeout(() => setAutoScan(localStorage.getItem("liq-intake-autoscan") === "1"), 0);
+    return () => clearTimeout(t);
+  }, []);
+  function toggleAutoScan(on: boolean) {
+    setAutoScan(on);
+    localStorage.setItem("liq-intake-autoscan", on ? "1" : "0");
+  }
+
+  function addPhotos(files: FileList | null) {
+    if (!files) return;
+    setPhotos((cur) =>
+      [...cur, ...Array.from(files).map((file) => ({ file, url: URL.createObjectURL(file) }))].slice(0, 8)
+    );
+  }
+  function removePhoto(url: string) {
+    URL.revokeObjectURL(url);
+    setPhotos((cur) => cur.filter((p) => p.url !== url));
+  }
+  function clearPhotos() {
+    setPhotos((cur) => {
+      cur.forEach((p) => URL.revokeObjectURL(p.url));
+      return [];
+    });
+  }
 
   useEffect(() => {
     const onOnline = () => void flushQueue();
@@ -219,9 +248,15 @@ export default function IntakeClient({
     }
     setSaving(true);
     setSaveMsg(null);
-    const payload: Record<string, unknown> = { ...form, palletId };
+    const payload: Record<string, unknown> = { ...form, palletId, qty };
     for (const k of Object.keys(payload)) if (payload[k] === "") delete payload[k];
     if (!form.category && pallet) payload.category = pallet.category;
+
+    const resetForNext = () => {
+      setForm((f) => ({ ...emptyForm, condition: f.condition, storageLocation: f.storageLocation }));
+      clearPhotos();
+      setQty(1);
+    };
 
     try {
       const res = await fetch("/api/items", {
@@ -238,14 +273,14 @@ export default function IntakeClient({
       let photoNote = "";
       if (photos.length > 0) {
         const fd = new FormData();
-        photos.slice(0, 8).forEach((f) => fd.append("photos", f));
+        photos.slice(0, 8).forEach((p) => fd.append("photos", p.file));
         const up = await fetch(`/api/items/${data.id}/photos`, { method: "POST", body: fd });
         photoNote = up.ok ? ` · ${photos.length} photo(s)` : " · photo upload FAILED";
       }
-      setSavedCount((c) => c + 1);
-      setSaveMsg({ ok: true, text: `Saved ${data.sku}${photoNote}` });
-      setForm((f) => ({ ...emptyForm, condition: f.condition, storageLocation: f.storageLocation }));
-      setPhotos([]);
+      setSavedCount((c) => c + (data.count ?? 1));
+      setSaveMsg({ ok: true, text: `Saved ${data.sku}${data.count > 1 ? ` ×${data.count}` : ""}${photoNote}` });
+      resetForNext();
+      if (autoScan) void startScan(); // straight into the next barcode
     } catch {
       // Offline: queue it (photos can't be queued)
       const q = readQueue();
@@ -253,8 +288,7 @@ export default function IntakeClient({
       localStorage.setItem(QUEUE_KEY, JSON.stringify(q));
       setQueued(q.length);
       setSaveMsg({ ok: true, text: `Offline — item queued (${q.length} pending). Photos not queued.` });
-      setForm((f) => ({ ...emptyForm, condition: f.condition, storageLocation: f.storageLocation }));
-      setPhotos([]);
+      resetForNext();
     }
     setSaving(false);
   }
@@ -417,21 +451,31 @@ export default function IntakeClient({
             {locations.map((l) => <option key={l} value={l} />)}
           </datalist>
         </div>
-        <div>
-          <label className={labelCls}>Photos (max 8)</label>
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            capture="environment"
-            className={inputCls + " py-2"}
-            onChange={(e) => setPhotos(Array.from(e.target.files ?? []).slice(0, 8))}
-          />
-          {photos.length > 0 ? <div className="mt-1 text-[11px] text-muted">{photos.length} selected</div> : null}
-        </div>
         <div className="col-span-2">
           <label className={labelCls}>Notes</label>
           <input className={inputCls + " py-2.5"} value={form.notes} onChange={set("notes")} />
+        </div>
+
+        {/* Photos: repeat "Take photo" for shot-after-shot, thumbnails with remove */}
+        <div className="col-span-2">
+          <label className={labelCls}>Photos ({photos.length}/8)</label>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className={btnCls + " cursor-pointer py-2.5"}>
+              Take photo
+              <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { addPhotos(e.target.files); e.target.value = ""; }} />
+            </label>
+            <label className={btnCls + " cursor-pointer py-2.5"}>
+              Gallery
+              <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { addPhotos(e.target.files); e.target.value = ""; }} />
+            </label>
+            {photos.map((p) => (
+              <span key={p.url} className="relative inline-block h-12 w-12 border border-edge">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={p.url} alt="" className="h-full w-full object-cover" />
+                <button type="button" onClick={() => removePhoto(p.url)} className="absolute -right-1.5 -top-1.5 h-4 w-4 bg-danger text-center text-[10px] leading-4 text-white cursor-pointer">×</button>
+              </span>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -439,9 +483,21 @@ export default function IntakeClient({
         <div className={`text-[13px] ${saveMsg.ok ? "text-ok" : "text-danger"}`}>{saveMsg.text}</div>
       ) : null}
 
-      <button type="submit" disabled={saving} className={btnPrimaryCls + " w-full py-3 text-sm"}>
-        {saving ? "Saving…" : "SAVE ITEM"}
-      </button>
+      {/* Save row: quantity stepper for identical units + auto-rescan toggle */}
+      <div className="flex items-stretch gap-2">
+        <div className="flex shrink-0 items-center border border-edge bg-raised">
+          <button type="button" className="px-3 py-3 text-lg text-zinc-300 cursor-pointer" onClick={() => setQty((n) => Math.max(1, n - 1))}>−</button>
+          <span className="min-w-8 text-center font-mono text-sm">×{qty}</span>
+          <button type="button" className="px-3 py-3 text-lg text-zinc-300 cursor-pointer" onClick={() => setQty((n) => Math.min(50, n + 1))}>+</button>
+        </div>
+        <button type="submit" disabled={saving} className={btnPrimaryCls + " flex-1 py-3 text-sm"}>
+          {saving ? "Saving…" : qty > 1 ? `SAVE ${qty} IDENTICAL ITEMS` : "SAVE ITEM"}
+        </button>
+      </div>
+      <label className="flex cursor-pointer items-center gap-2 text-[12px] text-zinc-400">
+        <input type="checkbox" checked={autoScan} onChange={(e) => toggleAutoScan(e.target.checked)} />
+        Continuous mode — reopen the scanner after each save
+      </label>
     </form>
   );
 }
