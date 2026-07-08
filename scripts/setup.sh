@@ -48,7 +48,15 @@ fi
 DB_URL=$(grep '^DATABASE_URL=' .env | cut -d= -f2-)
 if command -v pg_isready >/dev/null 2>&1 && ! pg_isready -q 2>/dev/null; then
   say "PostgreSQL is not responding — trying to start it…"
-  (service postgresql start || sudo service postgresql start || pg_ctlcluster 16 main start) >/dev/null 2>&1 || true
+  PG_VERSION=$(ls /usr/lib/postgresql/ 2>/dev/null | sort -V | tail -1)
+  (service postgresql start \
+    || sudo service postgresql start \
+    || pg_ctlcluster "${PG_VERSION:-16}" main start) >/dev/null 2>&1 || true
+  # Give it a few seconds to actually come up rather than checking once.
+  for i in $(seq 1 10); do
+    pg_isready -q 2>/dev/null && break
+    sleep 1
+  done
 fi
 # Create the database if we have local psql access and it doesn't exist yet.
 DB_NAME=$(printf '%s' "$DB_URL" | sed -E 's|.*/([^/?]+)(\?.*)?$|\1|')
