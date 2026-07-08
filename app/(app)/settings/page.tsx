@@ -33,7 +33,7 @@ const ENV_FALLBACKS: Record<string, string | undefined> = {
 
 export default async function SettingsPage() {
   const me = await requireUser();
-  const [settingRows, templates, locations, users, defaultPricePct, agingDays, lowMarginPct, ebayRefreshToken] =
+  const [settingRows, templates, locations, users, defaultPricePct, agingDays, lowMarginPct, ebayRefreshToken, feeEbay, feeAmazon, feeFacebook, feeOther] =
     await Promise.all([
       prisma.setting.findMany({ where: { key: { in: [...CRED_KEYS] } }, select: { key: true, value: true } }),
       prisma.listingTemplate.findMany({ orderBy: { category: "asc" } }),
@@ -43,6 +43,10 @@ export default async function SettingsPage() {
       getSetting("agingDays"),
       getSetting("lowMarginPct"),
       getSetting("ebay.refreshToken"),
+      getSetting("fees.ebayPct"),
+      getSetting("fees.amazonPct"),
+      getSetting("fees.facebookPct"),
+      getSetting("fees.otherPct"),
     ]);
 
   const setKeys = new Set(settingRows.filter((r) => r.value).map((r) => r.key));
@@ -53,6 +57,7 @@ export default async function SettingsPage() {
   return (
     <SettingsClient
       numbers={{ defaultPricePct, agingDays, lowMarginPct }}
+      fees={{ ebayPct: feeEbay, amazonPct: feeAmazon, facebookPct: feeFacebook, otherPct: feeOther }}
       credStatus={credStatus}
       templates={templates.map((t) => ({ category: t.category, titleTemplate: t.titleTemplate, descriptionTemplate: t.descriptionTemplate }))}
       locations={locations.map((l) => ({ code: l.code, notes: l.notes }))}

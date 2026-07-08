@@ -5,6 +5,8 @@ import { recalcPalletStatus } from "@/lib/pallets";
 import { CATEGORIES, CONDITIONS, ITEM_STATUSES, PLATFORMS } from "@/lib/constants";
 import { toPlain } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity";
+import { estimateFees } from "@/lib/fees";
+import { getFeeRates } from "@/lib/settings";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -50,6 +52,8 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       ["msrp", "MSRP"],
       ["sellPrice", "sell price"],
       ["soldPrice", "sold price"],
+      ["feesAmount", "fees"],
+      ["shippingCost", "shipping cost"],
       ["weightLbs", "weight"],
       ["lengthIn", "length"],
       ["widthIn", "width"],
@@ -101,6 +105,8 @@ export async function PATCH(req: NextRequest, { params }: Params) {
         if (b.dateListed === undefined) data.dateListed = new Date();
         if (b.dateSold === undefined) data.dateSold = null;
         if (b.soldPrice === undefined || b.soldPrice === "") data.soldPrice = null;
+        if (b.feesAmount === undefined || b.feesAmount === "") data.feesAmount = null;
+        if (b.shippingCost === undefined || b.shippingCost === "") data.shippingCost = null;
         data.dateReturned = null;
         if (b.returnReason === undefined) data.returnReason = null;
       }
@@ -118,6 +124,19 @@ export async function PATCH(req: NextRequest, { params }: Params) {
           data.soldPrice !== undefined ? data.soldPrice : existing.soldPrice;
         if (effectiveSoldPrice === null && existing.sellPrice !== null) {
           data.soldPrice = existing.sellPrice;
+        }
+        // Stamp estimated platform fees so profit numbers are net of fees.
+        // data.soldPrice may be a plain number (money loop) or a Prisma
+        // Decimal (the sellPrice auto-fill above); normalize before math.
+        const effectiveFees = data.feesAmount !== undefined ? data.feesAmount : existing.feesAmount;
+        if (effectiveFees === null) {
+          const asNum = (v: unknown): number | null =>
+            typeof v === "number" ? v : v && typeof v === "object" && "toNumber" in v ? (v as { toNumber(): number }).toNumber() : null;
+          const priceForFees =
+            data.soldPrice !== undefined ? asNum(data.soldPrice) : asNum(existing.soldPrice);
+          const platform = (data.platform as string | undefined) ?? existing.platform ?? null;
+          const fees = estimateFees(priceForFees, platform, await getFeeRates());
+          if (fees !== null) data.feesAmount = fees;
         }
       }
     }

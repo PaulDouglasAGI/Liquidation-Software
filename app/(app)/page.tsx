@@ -6,6 +6,7 @@ import { num } from "@/lib/serialize";
 import { money, pct, dateStr, daysSince, marginPct } from "@/lib/format";
 import { label } from "@/lib/constants";
 import { Stat, panelCls, thCls, tdCls, monoCls } from "@/components/ui";
+import EbaySync from "@/components/EbaySync";
 
 export const dynamic = "force-dynamic";
 
@@ -36,27 +37,30 @@ export default async function Dashboard() {
 
   const [soldToday, listedToday, inStock, listed, agingCount, allItems, pallets, soldRecent] =
     await Promise.all([
-      prisma.item.findMany({ where: { status: "SOLD", dateSold: { gte: today } }, select: { soldPrice: true, ourCost: true } }),
+      prisma.item.findMany({ where: { status: "SOLD", dateSold: { gte: today } }, select: { soldPrice: true, ourCost: true, feesAmount: true, shippingCost: true } }),
       prisma.item.count({ where: { dateListed: { gte: today } } }),
       prisma.item.count({ where: { status: "IN_STOCK" } }),
       prisma.item.count({ where: { status: "LISTED" } }),
       prisma.item.count({ where: { status: "LISTED", dateListed: { lte: agingCutoff } } }),
       prisma.item.findMany({
         where: { status: { in: ["IN_STOCK", "LISTED", "SOLD"] } },
-        select: { id: true, sku: true, name: true, category: true, status: true, ourCost: true, sellPrice: true, soldPrice: true, dateListed: true, createdAt: true },
+        select: { id: true, sku: true, name: true, category: true, status: true, ourCost: true, sellPrice: true, soldPrice: true, feesAmount: true, shippingCost: true, dateListed: true, createdAt: true },
       }),
       prisma.pallet.findMany({
         where: { status: { not: "CLOSED" } },
-        include: { items: { select: { status: true, soldPrice: true, ourCost: true } } },
+        include: { items: { select: { status: true, soldPrice: true, ourCost: true, feesAmount: true, shippingCost: true } } },
       }),
       prisma.item.findMany({
         where: { status: "SOLD", dateSold: { gte: eightWeeksAgo } },
-        select: { soldPrice: true, ourCost: true, dateSold: true },
+        select: { soldPrice: true, ourCost: true, feesAmount: true, shippingCost: true, dateSold: true },
       }),
     ]);
 
   const revToday = soldToday.reduce((a, i) => a + (num(i.soldPrice) ?? 0), 0);
-  const profitToday = soldToday.reduce((a, i) => a + (num(i.soldPrice) ?? 0) - i.ourCost.toNumber(), 0);
+  // Net of platform fees and shipping — the number that actually hits the bank
+  const netOf = (i: { soldPrice: unknown; ourCost: { toNumber(): number }; feesAmount: unknown; shippingCost: unknown }) =>
+    (num(i.soldPrice as never) ?? 0) - i.ourCost.toNumber() - (num(i.feesAmount as never) ?? 0) - (num(i.shippingCost as never) ?? 0);
+  const profitToday = soldToday.reduce((a, i) => a + netOf(i), 0);
 
   // Pallet ROI rows
   const palletRows = pallets
@@ -64,7 +68,8 @@ export default async function Dashboard() {
       const cost = p.totalCost.toNumber();
       const sold = p.items.filter((i) => i.status === "SOLD");
       const revenue = sold.reduce((a, i) => a + (num(i.soldPrice) ?? 0), 0);
-      const profit = revenue - cost;
+      const feesAndShip = sold.reduce((a, i) => a + (num(i.feesAmount) ?? 0) + (num(i.shippingCost) ?? 0), 0);
+      const profit = revenue - feesAndShip - cost;
       return {
         id: p.id,
         code: p.palletCode,
@@ -89,7 +94,7 @@ export default async function Dashboard() {
     weeks.push({
       label: `${start.getMonth() + 1}/${start.getDate()}`,
       revenue: inWeek.reduce((a, i) => a + (num(i.soldPrice) ?? 0), 0),
-      profit: inWeek.reduce((a, i) => a + (num(i.soldPrice) ?? 0) - i.ourCost.toNumber(), 0),
+      profit: inWeek.reduce((a, i) => a + netOf(i), 0),
     });
   }
   const maxWeek = Math.max(1, ...weeks.map((w) => w.revenue));
@@ -107,7 +112,7 @@ export default async function Dashboard() {
   // Top 10 sold items by margin
   const topMargin = allItems
     .filter((i) => i.status === "SOLD" && num(i.soldPrice))
-    .map((i) => ({ ...i, margin: marginPct(num(i.soldPrice), i.ourCost.toNumber()) ?? 0, profit: (num(i.soldPrice) ?? 0) - i.ourCost.toNumber() }))
+    .map((i) => ({ ...i, margin: marginPct(num(i.soldPrice), i.ourCost.toNumber() + (num(i.feesAmount) ?? 0) + (num(i.shippingCost) ?? 0)) ?? 0, profit: netOf(i) }))
     .sort((a, b) => b.margin - a.margin)
     .slice(0, 10);
 
@@ -126,9 +131,12 @@ export default async function Dashboard() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-baseline justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-base font-semibold text-zinc-100">Dashboard</h1>
-        <span className="text-[11px] text-muted">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</span>
+        <div className="flex items-center gap-3">
+          <EbaySync />
+          <span className="text-[11px] text-muted">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</span>
+        </div>
       </div>
 
       {/* Row 1: today */}
@@ -160,7 +168,7 @@ export default async function Dashboard() {
                 <th className={thCls + " text-right"}>Listed</th>
                 <th className={thCls + " text-right"}>Sold</th>
                 <th className={thCls + " text-right"}>Revenue</th>
-                <th className={thCls + " text-right"}>Profit</th>
+                <th className={thCls + " text-right"}>Net profit</th>
                 <th className={thCls + " text-right"}>ROI %</th>
               </tr>
             </thead>

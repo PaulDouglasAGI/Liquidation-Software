@@ -5,6 +5,10 @@ export const SETTING_DEFAULTS: Record<string, string> = {
   defaultPricePct: "50", // default sell price as % of MSRP
   agingDays: "30", // flag listed items older than this
   lowMarginPct: "20", // alert threshold for low-margin items
+  "fees.ebayPct": "13.25", // platform fees as % of sale price
+  "fees.amazonPct": "15",
+  "fees.facebookPct": "5",
+  "fees.otherPct": "0",
 };
 
 export async function getSetting(key: string): Promise<string> {
@@ -23,6 +27,17 @@ export async function setSetting(key: string, value: string) {
     update: { value },
     create: { key, value },
   });
+}
+
+/** The four per-platform fee percentages, as configured (with defaults). */
+export async function getFeeRates() {
+  const [EBAY, AMAZON, FACEBOOK, OTHER] = await Promise.all([
+    getSettingNum("fees.ebayPct"),
+    getSettingNum("fees.amazonPct"),
+    getSettingNum("fees.facebookPct"),
+    getSettingNum("fees.otherPct"),
+  ]);
+  return { EBAY, AMAZON, FACEBOOK, OTHER };
 }
 
 /** API credential lookup: DB setting first, env var fallback. */

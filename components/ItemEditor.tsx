@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { inputCls, inputNarrowCls, selectCls, selectNarrowCls, btnCls, btnPrimaryCls, btnDangerCls, labelCls, monoCls, panelCls } from "@/components/ui";
 import { CATEGORIES, CONDITIONS, ITEM_STATUSES, PLATFORMS, label } from "@/lib/constants";
 import { money, pct, dateStr } from "@/lib/format";
+import { estimateFees, netProfit, type FeeRates } from "@/lib/fees";
 
 export interface ItemData {
   id: string;
@@ -20,6 +21,8 @@ export interface ItemData {
   ourCost: number;
   sellPrice: number | null;
   soldPrice: number | null;
+  feesAmount: number | null;
+  shippingCost: number | null;
   photos: string[];
   serialNumber: string | null;
   weightLbs: number | null;
@@ -53,7 +56,7 @@ interface MarketResult {
 
 const s = (v: string | number | null) => (v === null || v === undefined ? "" : String(v));
 
-export default function ItemEditor({ item, locations }: { item: ItemData; locations: string[] }) {
+export default function ItemEditor({ item, locations, feeRates }: { item: ItemData; locations: string[]; feeRates: FeeRates }) {
   const router = useRouter();
   const [form, setForm] = useState({
     upc: s(item.upc),
@@ -66,6 +69,8 @@ export default function ItemEditor({ item, locations }: { item: ItemData; locati
     ourCost: s(item.ourCost),
     sellPrice: s(item.sellPrice),
     soldPrice: s(item.soldPrice),
+    feesAmount: s(item.feesAmount),
+    shippingCost: s(item.shippingCost),
     serialNumber: s(item.serialNumber),
     weightLbs: s(item.weightLbs),
     lengthIn: s(item.lengthIn),
@@ -92,11 +97,15 @@ export default function ItemEditor({ item, locations }: { item: ItemData; locati
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
       setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  // Live margin
+  // Live margin — gross, and net of the selected platform's estimated fees
   const price = parseFloat(form.sellPrice);
   const cost = parseFloat(form.ourCost) || 0;
   const profit = Number.isFinite(price) ? price - cost : null;
   const margin = profit !== null && price > 0 ? (profit / price) * 100 : null;
+  const estFees = Number.isFinite(price) ? estimateFees(price, form.platform || "EBAY", feeRates) : null;
+  const netAtList = Number.isFinite(price)
+    ? netProfit({ soldPrice: price, ourCost: cost, fees: estFees })
+    : null;
 
   async function save() {
     if (busy) return;
@@ -394,10 +403,26 @@ export default function ItemEditor({ item, locations }: { item: ItemData; locati
                 {profit !== null ? `${money(profit)} · ${pct(margin)}` : "—"}
               </span>
             </div>
+            <div className="mt-1 flex justify-between text-[13px]">
+              <span className="text-muted">Net after {label(form.platform || "EBAY")} fees ({money(estFees)})</span>
+              <span className={`${monoCls} ${netAtList !== null && netAtList >= 0 ? "text-ok" : "text-danger"}`}>
+                {netAtList !== null ? money(netAtList) : "—"}
+              </span>
+            </div>
             {form.status === "SOLD" || item.soldPrice !== null ? (
-              <div className="mt-2">
-                <label className={labelCls}>Sold price</label>
-                <input type="number" step="0.01" className={inputCls + " font-mono"} value={form.soldPrice} onChange={set("soldPrice")} />
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                <div>
+                  <label className={labelCls}>Sold price</label>
+                  <input type="number" step="0.01" className={inputCls + " font-mono"} value={form.soldPrice} onChange={set("soldPrice")} />
+                </div>
+                <div>
+                  <label className={labelCls}>Fees</label>
+                  <input type="number" step="0.01" className={inputCls + " font-mono"} value={form.feesAmount} onChange={set("feesAmount")} placeholder="auto" />
+                </div>
+                <div>
+                  <label className={labelCls}>Shipping</label>
+                  <input type="number" step="0.01" className={inputCls + " font-mono"} value={form.shippingCost} onChange={set("shippingCost")} placeholder="0.00" />
+                </div>
               </div>
             ) : null}
             <button className={btnCls + " mt-3 w-full"} onClick={() => void marketCheck()}>Market Check (eBay)</button>

@@ -110,6 +110,62 @@ export async function getUserAccessToken(): Promise<string | null> {
   return cachedUserToken.token;
 }
 
+export interface EbayOrderLine {
+  orderId: string;
+  creationDate: string;
+  legacyItemId: string | null;
+  sku: string | null;
+  /** what the buyer paid for this line item */
+  lineTotal: number | null;
+  /** eBay's actual fee for the whole order, when reported */
+  orderMarketplaceFee: number | null;
+  orderLineCount: number;
+}
+
+/**
+ * Paid orders created since `sinceIso`, flattened to line items, via the
+ * Fulfillment API (requires the OAuth user connection). Paginates.
+ */
+export async function getRecentOrders(sinceIso: string): Promise<EbayOrderLine[]> {
+  const token = await getUserAccessToken();
+  if (!token) {
+    throw new EbayConfigError("eBay is not connected — use Connect eBay in Settings first.");
+  }
+  const lines: EbayOrderLine[] = [];
+  let url: string | null =
+    `${hosts().api}/sell/fulfillment/v1/order?limit=50&filter=${encodeURIComponent(
+      `creationdate:[${sinceIso}..]`
+    )}`;
+  let pages = 0;
+  while (url && pages < 20) {
+    pages++;
+    const res: Response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) throw new Error(`eBay order fetch failed (${res.status}): ${await res.text()}`);
+    const data = await res.json();
+    for (const order of data.orders ?? []) {
+      const lineItems = order.lineItems ?? [];
+      const fee = parseFloat(order.totalMarketplaceFee?.value ?? "");
+      for (const li of lineItems) {
+        const total = parseFloat(li.total?.value ?? "");
+        lines.push({
+          orderId: order.orderId,
+          creationDate: order.creationDate,
+          legacyItemId: li.legacyItemId ?? null,
+          sku: li.sku ?? null,
+          lineTotal: Number.isFinite(total) ? total : null,
+          orderMarketplaceFee: Number.isFinite(fee) ? fee : null,
+          orderLineCount: lineItems.length,
+        });
+      }
+    }
+    url = data.next ?? null;
+  }
+  return lines;
+}
+
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
 /** OAuth client-credentials token for the Browse API. */
@@ -244,6 +300,7 @@ export interface EbayListingInput {
   category: string;
   price: number;
   upc?: string | null;
+  sku?: string | null;
   photoUrls: string[];
   weightLbs?: number | null;
 }
@@ -290,6 +347,7 @@ export async function addFixedPriceItem(input: EbayListingInput): Promise<{ item
     <DispatchTimeMax>1</DispatchTimeMax>
     <ListingDuration>GTC</ListingDuration>
     <ListingType>FixedPriceItem</ListingType>
+    ${input.sku ? `<SKU>${xmlEscape(input.sku)}</SKU>` : ""}
     ${input.upc ? `<ProductListingDetails><UPC>${xmlEscape(input.upc)}</UPC></ProductListingDetails>` : ""}
     ${pictures ? `<PictureDetails>${pictures}</PictureDetails>` : ""}
     <Quantity>1</Quantity>

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { num } from "@/lib/serialize";
+import { getFeeRates } from "@/lib/settings";
 import ItemEditor from "@/components/ItemEditor";
 
 export const dynamic = "force-dynamic";
@@ -9,9 +10,10 @@ export const dynamic = "force-dynamic";
 export default async function ItemPage({ params }: { params: Promise<{ id: string }> }) {
   await requireUser();
   const { id } = await params;
-  const [item, locations] = await Promise.all([
+  const [item, locations, feeRates] = await Promise.all([
     prisma.item.findUnique({ where: { id }, include: { pallet: { select: { id: true, palletCode: true } } } }),
     prisma.storageLocation.findMany({ orderBy: { code: "asc" }, select: { code: true } }),
+    getFeeRates(),
   ]);
   if (!item) notFound();
 
@@ -30,6 +32,8 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
         ourCost: item.ourCost.toNumber(),
         sellPrice: num(item.sellPrice),
         soldPrice: num(item.soldPrice),
+        feesAmount: num(item.feesAmount),
+        shippingCost: num(item.shippingCost),
         photos: item.photos,
         serialNumber: item.serialNumber,
         weightLbs: num(item.weightLbs),
@@ -52,6 +56,7 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
         updatedAt: item.updatedAt.toISOString(),
       }}
       locations={locations.map((l) => l.code)}
+      feeRates={feeRates}
     />
   );
 }

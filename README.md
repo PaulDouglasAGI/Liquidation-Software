@@ -70,7 +70,7 @@ npm run start
 | Barcode labels | `/labels` | Printable Code 128 SKU labels (2.25"×1.25", thermal- and paper-friendly) — single item or bulk from the inventory selection; scanning a label finds the item |
 | Insights | `/insights` | Days-to-sell and MSRP-recovery by category and brand, monthly trend, return rate, and **smart repricing**: suggested cuts for aging listings (10%/20%, never below cost) applied in one click |
 | Activity | `/activity` | Team audit trail — intake, status changes, imports, listings, restores; who did what, when |
-| P&L | `/pnl` | Date presets + custom range, group by pallet/category/platform/day/week/month, revenue / COGS / gross / margin / expenses / net, CSV export |
+| P&L | `/pnl` | Date presets + custom range, group by pallet/category/platform/day/week/month — **net of platform fees and shipping** (rates configurable in Settings, stamped on each sale, editable per item), plus expenses, CSV export |
 | Suppliers | `/suppliers` | Purchase log per supplier + ROI per supplier derived from pallet records |
 | Settings | `/settings` | Pricing formula, aging threshold, low-margin alert, eBay/Amazon/UPC credentials, listing templates, storage locations, team members, **one-click full backup and restore** (move a phone install to a server in two clicks) |
 
@@ -86,6 +86,8 @@ Set an item's status to **Returned** to reverse the sale (it leaves revenue imme
 
 - **UPC lookup** — upcitemdb.com trial endpoint works with no key; add a key in Settings for the paid tier.
 - **eBay: Connect with a button** — save your keyset (App ID, Cert ID, Dev ID, RuName) once in Settings, point the RuName's "auth accepted URL" at `/api/ebay/oauth/callback`, click **Connect eBay account**, approve — done. Tokens refresh automatically; nothing to paste or renew. (A legacy manual Auth Token still works as a fallback.)
+- **eBay order sync** — the "Sync eBay orders" button (dashboard and Settings) pulls recent orders and marks matching items sold with the real price, order ID, and eBay's actual fee. For hands-free syncing, point a cron at it: `curl -X POST https://your-app/api/ebay/sync-orders -H "X-Webhook-Secret: $WEBHOOK_SECRET"`
+- **Bulk listing** — select items in Inventory → "Push to eBay (N)" lists them all sequentially with per-item results (max 25 per push).
 - **eBay Market Check** — uses the Marketplace Insights API for true 90-day sold prices when your keyset has access, otherwise falls back to Browse API active listings and labels the result accordingly.
 - **eBay listing push** — Trading API `AddFixedPriceItem` via the OAuth connection. Photos are passed as public URLs, so the app must be reachable from the internet for pictures to attach.
 - **eBay sold events** — `POST /api/webhooks/ebay` with `{ "listingId": "...", "soldPrice": 99.99, "orderId": "..." }` marks the matching item sold automatically. Requires `WEBHOOK_SECRET` to be set and sent as the `X-Webhook-Secret` header — the endpoint refuses to act without it (eBay item IDs are public, so an open endpoint would let anyone rewrite your sales).

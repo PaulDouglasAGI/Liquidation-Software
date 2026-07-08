@@ -97,7 +97,7 @@ export default function RepriceSuggestions({
                 <td className={`${tdCls} ${monoCls} text-right text-danger`}>{s.daysListed}d</td>
                 <td className={`${tdCls} ${monoCls} text-right`}>{money(s.currentPrice)}</td>
                 <td className={`${tdCls} ${monoCls} text-right text-accent`}>{money(s.suggestedPrice)} <span className="text-muted">(−{s.cutPct}%)</span></td>
-                <td className={`${tdCls} ${monoCls} text-right text-muted`}>{money(s.ourCost)}</td>
+                <td className={`${tdCls} ${monoCls} text-right text-muted`}>{money(s.costFloor)}</td>
               </tr>
             ))}
           </tbody>

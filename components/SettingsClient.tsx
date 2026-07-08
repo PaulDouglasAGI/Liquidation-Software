@@ -5,11 +5,13 @@ import { useRouter } from "next/navigation";
 import { inputCls, btnCls, btnPrimaryCls, labelCls, monoCls, panelCls, thCls, tdCls, inputNarrowCls, selectNarrowCls } from "@/components/ui";
 import { CATEGORIES, label } from "@/lib/constants";
 import RestoreBackup from "@/components/RestoreBackup";
+import EbaySync from "@/components/EbaySync";
 
 type CredStatus = "db" | "env" | "unset";
 
 interface Props {
   numbers: { defaultPricePct: string; agingDays: string; lowMarginPct: string };
+  fees: { ebayPct: string; amazonPct: string; facebookPct: string; otherPct: string };
   credStatus: Record<string, CredStatus>;
   templates: { category: string; titleTemplate: string; descriptionTemplate: string }[];
   locations: { code: string; notes: string | null }[];
@@ -33,7 +35,7 @@ function credPlaceholder(status: CredStatus) {
   return "not set";
 }
 
-export default function SettingsClient({ numbers, credStatus, templates, locations, users, myUserId, ebayConnected }: Props) {
+export default function SettingsClient({ numbers, fees, credStatus, templates, locations, users, myUserId, ebayConnected }: Props) {
   const router = useRouter();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -72,6 +74,7 @@ export default function SettingsClient({ numbers, credStatus, templates, locatio
       </div>
 
       <PricingSection numbers={numbers} onSave={saveSettings} />
+      <PlatformFeesSection fees={fees} onSave={saveSettings} />
       <EbayConnectSection connected={ebayConnected} onDisconnect={() => clearSettings(["ebay.refreshToken"])} />
       <CredsSection
         title="eBay API credentials"
@@ -124,6 +127,49 @@ export default function SettingsClient({ numbers, credStatus, templates, locatio
   );
 }
 
+function PlatformFeesSection({ fees, onSave }: { fees: Props["fees"]; onSave: (s: Record<string, string>) => Promise<void> }) {
+  const router = useRouter();
+  const [form, setForm] = useState(fees);
+  const [backfillMsg, setBackfillMsg] = useState("");
+  const field = (key: keyof Props["fees"], labelText: string) => (
+    <div key={key}>
+      <label className={labelCls}>{labelText}</label>
+      <input type="number" min="0" max="99" step="0.01" className={inputNarrowCls + " w-28 font-mono"} value={form[key]} onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))} />
+    </div>
+  );
+
+  async function backfill() {
+    if (!confirm("Stamp estimated fees onto past sales that have none? (Sales with a fee amount already set are untouched.)")) return;
+    const res = await fetch("/api/fees/backfill", { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    setBackfillMsg(res.ok ? `${data.updated} past sale(s) updated` : data.error ?? "Backfill failed");
+    if (res.ok) router.refresh();
+  }
+
+  return (
+    <Section title="Platform fees (% of sale price)">
+      <div className="flex flex-wrap items-end gap-3">
+        {field("ebayPct", "eBay %")}
+        {field("amazonPct", "Amazon %")}
+        {field("facebookPct", "Facebook %")}
+        {field("otherPct", "Other %")}
+        <button
+          className={btnPrimaryCls}
+          onClick={() => void onSave({ "fees.ebayPct": form.ebayPct, "fees.amazonPct": form.amazonPct, "fees.facebookPct": form.facebookPct, "fees.otherPct": form.otherPct })}
+        >
+          Save
+        </button>
+        <button className={btnCls} onClick={() => void backfill()}>Estimate fees for past sales</button>
+        {backfillMsg ? <span className="text-[12px] text-ok">{backfillMsg}</span> : null}
+      </div>
+      <p className="mt-2 text-[12px] text-muted">
+        Fees are stamped on each sale at these rates (editable per item afterwards), so P&L, dashboard, and
+        repricing floors all reflect what actually lands in the bank.
+      </p>
+    </Section>
+  );
+}
+
 function EbayConnectSection({ connected, onDisconnect }: { connected: boolean; onDisconnect: () => Promise<void> }) {
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
   // Read the OAuth redirect outcome after mount (avoids hydration mismatch)
@@ -156,6 +202,7 @@ function EbayConnectSection({ connected, onDisconnect }: { connected: boolean; o
         ) : (
           <a className={btnPrimaryCls} href="/api/ebay/oauth/start">Connect eBay account</a>
         )}
+        {connected ? <EbaySync /> : null}
         {notice ? <span className={`text-[12px] ${notice.ok ? "text-ok" : "text-danger"}`}>{notice.text}</span> : null}
       </div>
       <p className="mt-2 text-[12px] text-muted">

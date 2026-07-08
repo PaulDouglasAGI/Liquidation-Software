@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
   });
 
   const csv = toCsv(
-    ["SKU", "UPC", "Name", "Brand", "Category", "Condition", "MSRP", "Cost", "List Price", "Sold Price", "Status", "Platform", "Location", "Pallet", "Date Listed", "Date Sold", "Days Listed", "Order ID"],
+    ["SKU", "UPC", "Name", "Brand", "Category", "Condition", "MSRP", "Cost", "List Price", "Sold Price", "Fees", "Shipping", "Status", "Platform", "Location", "Pallet", "Date Listed", "Date Sold", "Days Listed", "Order ID"],
     items.map((i) => [
       i.sku,
       i.upc,
@@ -29,6 +29,8 @@ export async function GET(req: NextRequest) {
       i.ourCost.toFixed(2),
       i.sellPrice?.toFixed(2),
       i.soldPrice?.toFixed(2),
+      i.feesAmount?.toFixed(2),
+      i.shippingCost?.toFixed(2),
       i.status,
       i.platform,
       i.storageLocation,

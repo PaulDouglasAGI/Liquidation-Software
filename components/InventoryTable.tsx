@@ -125,6 +125,34 @@ export default function InventoryTable({
     }
   }
 
+  async function bulkEbayPush() {
+    if (selected.size > 25) {
+      setMsg("Max 25 items per eBay push — select fewer and repeat");
+      return;
+    }
+    if (!confirm(`Push ${selected.size} item(s) to eBay as live listings?`)) return;
+    setBusy(true);
+    setMsg("");
+    const res = await fetch("/api/listings/ebay/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [...selected] }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (res.ok) {
+      const failed = (data.results ?? []).filter((r: { ok: boolean }) => !r.ok);
+      const failNote = failed.length
+        ? ` — skipped: ${failed.map((f: { sku: string; error: string }) => `${f.sku} (${f.error})`).join(", ")}`
+        : "";
+      setMsg(`${data.listed} listed on eBay${failNote}`);
+      setSelected(new Set());
+      router.refresh();
+    } else {
+      setMsg(data.error ?? "eBay push failed");
+    }
+  }
+
   function applyReprice() {
     const v = parseFloat(repriceVal);
     if (!Number.isFinite(v) || v <= 0) {
@@ -178,6 +206,7 @@ export default function InventoryTable({
               <button className={btnCls} onClick={() => setRepriceMode("")}>×</button>
             </span>
           )}
+          <button disabled={busy} className={btnCls} onClick={() => void bulkEbayPush()}>Push to eBay ({selected.size})</button>
           <a className={btnCls} href={`/api/listings/amazon?ids=${[...selected].join(",")}`}>Amazon flat file</a>
           <Link className={btnCls} href={`/labels?ids=${[...selected].join(",")}`}>Print labels</Link>
         </div>

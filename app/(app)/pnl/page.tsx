@@ -25,13 +25,14 @@ export default async function PnlPage({
       <h1 className="text-base font-semibold text-zinc-100">Profit &amp; Loss</h1>
       <PnlControls from={from.toISOString().slice(0, 10)} to={to.toISOString().slice(0, 10)} groupBy={groupBy} />
 
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-6">
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-7">
         <Stat label="Items sold" value={String(report.totals.count)} />
         <Stat label="Revenue" value={money(report.totals.revenue)} tone="ok" />
         <Stat label="COGS" value={money(report.totals.cogs)} />
-        <Stat label="Gross profit" value={money(report.totals.gross)} sub={report.totals.marginPct !== null ? `margin ${pct(report.totals.marginPct)}` : undefined} tone={report.totals.gross >= 0 ? "ok" : "danger"} />
+        <Stat label="Platform fees" value={money(report.totals.fees)} tone={report.totals.fees > 0 ? "danger" : undefined} />
+        <Stat label="Shipping" value={money(report.totals.shipping)} tone={report.totals.shipping > 0 ? "danger" : undefined} />
         <Stat label="Expenses" value={money(report.expenseTotal)} tone={report.expenseTotal > 0 ? "danger" : undefined} />
-        <Stat label="Net profit" value={money(report.net)} tone={report.net >= 0 ? "ok" : "danger"} />
+        <Stat label="Net profit" value={money(report.net)} sub={report.totals.netMarginPct !== null ? `net margin ${pct(report.totals.netMarginPct)}` : undefined} tone={report.net >= 0 ? "ok" : "danger"} />
       </div>
 
       <div className={panelCls}>
@@ -46,8 +47,10 @@ export default async function PnlPage({
                 <th className={thCls + " text-right"}>Items sold</th>
                 <th className={thCls + " text-right"}>Revenue</th>
                 <th className={thCls + " text-right"}>COGS</th>
-                <th className={thCls + " text-right"}>Gross profit</th>
-                <th className={thCls + " text-right"}>Margin %</th>
+                <th className={thCls + " text-right"}>Fees</th>
+                <th className={thCls + " text-right"}>Shipping</th>
+                <th className={thCls + " text-right"}>Net profit</th>
+                <th className={thCls + " text-right"}>Net margin %</th>
               </tr>
             </thead>
             <tbody>
@@ -57,12 +60,14 @@ export default async function PnlPage({
                   <td className={`${tdCls} ${monoCls} text-right`}>{g.count}</td>
                   <td className={`${tdCls} ${monoCls} text-right`}>{money(g.revenue)}</td>
                   <td className={`${tdCls} ${monoCls} text-right`}>{money(g.cogs)}</td>
-                  <td className={`${tdCls} ${monoCls} text-right ${g.gross >= 0 ? "text-ok" : "text-danger"}`}>{money(g.gross)}</td>
-                  <td className={`${tdCls} ${monoCls} text-right`}>{pct(g.marginPct)}</td>
+                  <td className={`${tdCls} ${monoCls} text-right`}>{money(g.fees)}</td>
+                  <td className={`${tdCls} ${monoCls} text-right`}>{money(g.shipping)}</td>
+                  <td className={`${tdCls} ${monoCls} text-right ${g.netProfit >= 0 ? "text-ok" : "text-danger"}`}>{money(g.netProfit)}</td>
+                  <td className={`${tdCls} ${monoCls} text-right`}>{pct(g.netMarginPct)}</td>
                 </tr>
               ))}
               {report.groups.length === 0 ? (
-                <tr><td className={tdCls + " text-muted"} colSpan={6}>No sales in this period.</td></tr>
+                <tr><td className={tdCls + " text-muted"} colSpan={8}>No sales in this period.</td></tr>
               ) : null}
             </tbody>
           </table>

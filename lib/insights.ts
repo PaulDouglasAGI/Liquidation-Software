@@ -1,7 +1,8 @@
 import "server-only";
 import { prisma } from "./db";
 import { num } from "./serialize";
-import { getSettingNum } from "./settings";
+import { getSettingNum, getFeeRates } from "./settings";
+import { feeAwareFloor, feeRateFor } from "./fees";
 
 export interface VelocityRow {
   key: string;
@@ -19,7 +20,7 @@ export interface RepriceSuggestion {
   currentPrice: number;
   suggestedPrice: number;
   cutPct: number;
-  ourCost: number;
+  costFloor: number; // fee-aware: selling here still nets the cost back
 }
 
 export interface MonthRow {
@@ -60,14 +61,15 @@ function velocity(
 
 export async function computeInsights() {
   const agingDays = await getSettingNum("agingDays");
+  const feeRates = await getFeeRates();
   const [soldRaw, listedRaw, returnedCount] = await Promise.all([
     prisma.item.findMany({
       where: { status: "SOLD" },
-      select: { category: true, brand: true, dateListed: true, dateSold: true, soldPrice: true, msrp: true, ourCost: true },
+      select: { category: true, brand: true, dateListed: true, dateSold: true, soldPrice: true, msrp: true, ourCost: true, feesAmount: true, shippingCost: true },
     }),
     prisma.item.findMany({
       where: { status: "LISTED" },
-      select: { id: true, sku: true, name: true, dateListed: true, sellPrice: true, ourCost: true },
+      select: { id: true, sku: true, name: true, dateListed: true, sellPrice: true, ourCost: true, platform: true },
     }),
     prisma.item.count({ where: { status: "RETURNED" } }),
   ]);
@@ -80,6 +82,7 @@ export async function computeInsights() {
     soldPrice: num(i.soldPrice),
     msrp: num(i.msrp),
     ourCost: i.ourCost.toNumber(),
+    feesAndShip: (num(i.feesAmount) ?? 0) + (num(i.shippingCost) ?? 0),
   }));
 
   // Velocity: overall, by category, by top brands (5+ sales)
@@ -103,7 +106,8 @@ export async function computeInsights() {
     const end = new Date(now.getFullYear(), now.getMonth() - m + 1, 1);
     const inMonth = sold.filter((i) => i.dateSold && i.dateSold >= start && i.dateSold < end);
     const revenue = inMonth.reduce((a, i) => a + (i.soldPrice ?? 0), 0);
-    const cogs = inMonth.reduce((a, i) => a + i.ourCost, 0);
+    // COGS here includes fees + shipping so "profit" is net of everything
+    const cogs = inMonth.reduce((a, i) => a + i.ourCost + i.feesAndShip, 0);
     months.push({
       month: start.toLocaleDateString("en-US", { month: "short", year: "2-digit" }),
       itemsSold: inMonth.length,
@@ -123,7 +127,10 @@ export async function computeInsights() {
     if (daysListed < agingDays) continue;
     const cutPct = daysListed >= agingDays * 2 ? 20 : 10;
     const cost = i.ourCost.toNumber();
-    const suggested = Math.max(cost, Math.round(price * (100 - cutPct)) / 100);
+    // Floor is fee-aware: selling at the floor must still NET the cost back
+    // after the platform's cut (assume eBay when the listing has no platform).
+    const floor = feeAwareFloor(cost, feeRateFor(i.platform ?? "EBAY", feeRates));
+    const suggested = Math.max(floor, Math.round(price * (100 - cutPct)) / 100);
     if (suggested >= price) continue; // already at/below cost floor
     suggestions.push({
       id: i.id,
@@ -133,7 +140,7 @@ export async function computeInsights() {
       currentPrice: price,
       suggestedPrice: suggested,
       cutPct,
-      ourCost: cost,
+      costFloor: floor,
     });
   }
   suggestions.sort((a, b) => b.daysListed - a.daysListed);

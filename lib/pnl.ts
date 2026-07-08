@@ -10,15 +10,21 @@ export interface PnlGroup {
   count: number;
   revenue: number;
   cogs: number;
-  gross: number;
-  marginPct: number | null;
+  fees: number;
+  shipping: number;
+  /** revenue − cogs − fees − shipping */
+  netProfit: number;
+  netMarginPct: number | null;
 }
+
+export type PnlTotals = Omit<PnlGroup, "key">;
 
 export interface PnlReport {
   groups: PnlGroup[];
-  totals: { count: number; revenue: number; cogs: number; gross: number; marginPct: number | null };
+  totals: PnlTotals;
   expenses: { id: string; date: Date; category: string; description: string; amount: number }[];
   expenseTotal: number;
+  /** net profit after operating expenses — the bottom line */
   net: number;
 }
 
@@ -59,6 +65,8 @@ export async function computePnl(from: Date, to: Date, groupBy: PnlGroupBy): Pro
       select: {
         soldPrice: true,
         ourCost: true,
+        feesAmount: true,
+        shippingCost: true,
         dateSold: true,
         category: true,
         platform: true,
@@ -68,9 +76,11 @@ export async function computePnl(from: Date, to: Date, groupBy: PnlGroupBy): Pro
     prisma.expense.findMany({ where: { date: { gte: from, lte: to } }, orderBy: { date: "desc" } }),
   ]);
 
+  const emptyGroup = (key: string): PnlGroup => ({
+    key, count: 0, revenue: 0, cogs: 0, fees: 0, shipping: 0, netProfit: 0, netMarginPct: null,
+  });
   const map = new Map<string, PnlGroup>();
-  let revenue = 0;
-  let cogs = 0;
+  const totals = emptyGroup("TOTAL");
   for (const i of sold) {
     const key = bucketKey(groupBy, {
       dateSold: i.dateSold,
@@ -78,20 +88,23 @@ export async function computePnl(from: Date, to: Date, groupBy: PnlGroupBy): Pro
       category: i.category,
       platform: i.platform,
     });
-    const g = map.get(key) ?? { key, count: 0, revenue: 0, cogs: 0, gross: 0, marginPct: null };
-    const r = num(i.soldPrice) ?? 0;
-    const c = i.ourCost.toNumber();
-    g.count++;
-    g.revenue += r;
-    g.cogs += c;
-    g.gross = g.revenue - g.cogs;
+    const g = map.get(key) ?? emptyGroup(key);
+    for (const t of [g, totals]) {
+      t.count++;
+      t.revenue += num(i.soldPrice) ?? 0;
+      t.cogs += i.ourCost.toNumber();
+      t.fees += num(i.feesAmount) ?? 0;
+      t.shipping += num(i.shippingCost) ?? 0;
+      t.netProfit = t.revenue - t.cogs - t.fees - t.shipping;
+      t.netMarginPct = t.revenue > 0 ? (t.netProfit / t.revenue) * 100 : null;
+    }
     map.set(key, g);
-    revenue += r;
-    cogs += c;
   }
-  const groups = [...map.values()]
-    .map((g) => ({ ...g, marginPct: g.revenue > 0 ? (g.gross / g.revenue) * 100 : null }))
-    .sort((a, b) => (groupBy === "day" || groupBy === "week" || groupBy === "month" ? a.key.localeCompare(b.key) : b.revenue - a.revenue));
+  const groups = [...map.values()].sort((a, b) =>
+    groupBy === "day" || groupBy === "week" || groupBy === "month"
+      ? a.key.localeCompare(b.key)
+      : b.revenue - a.revenue
+  );
 
   const expenseRows = expenses.map((e) => ({
     id: e.id,
@@ -101,14 +114,13 @@ export async function computePnl(from: Date, to: Date, groupBy: PnlGroupBy): Pro
     amount: e.amount.toNumber(),
   }));
   const expenseTotal = expenseRows.reduce((a, e) => a + e.amount, 0);
-  const gross = revenue - cogs;
 
   return {
     groups,
-    totals: { count: sold.length, revenue, cogs, gross, marginPct: revenue > 0 ? (gross / revenue) * 100 : null },
+    totals,
     expenses: expenseRows,
     expenseTotal,
-    net: gross - expenseTotal,
+    net: totals.netProfit - expenseTotal,
   };
 }
 

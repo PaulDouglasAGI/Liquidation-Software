@@ -3,6 +3,8 @@ import { prisma } from "@/lib/db";
 import { apiUser, badRequest, parseMoney, serverError, unauthorized } from "@/lib/api";
 import { recalcPalletStatus } from "@/lib/pallets";
 import { logActivity } from "@/lib/activity";
+import { estimateFees } from "@/lib/fees";
+import { getFeeRates } from "@/lib/settings";
 
 /**
  * Bulk actions over selected items.
@@ -26,11 +28,13 @@ export async function POST(req: NextRequest) {
     let updated = 0;
     switch (action) {
       case "markSold": {
+        const rates = await getFeeRates();
         for (const item of items) {
           const soldPrice = parseMoney(payload.soldPrice) ?? item.soldPrice?.toNumber() ?? item.sellPrice?.toNumber() ?? null;
+          const feesAmount = item.feesAmount?.toNumber() ?? estimateFees(soldPrice, item.platform, rates);
           await prisma.item.update({
             where: { id: item.id },
-            data: { status: "SOLD", soldPrice, dateSold: item.dateSold ?? new Date() },
+            data: { status: "SOLD", soldPrice, feesAmount, dateSold: item.dateSold ?? new Date() },
           });
           updated++;
         }
@@ -52,7 +56,7 @@ export async function POST(req: NextRequest) {
         // listing, clearing any previous sale.
         const res = await prisma.item.updateMany({
           where: { id: { in: ids } },
-          data: { status: "LISTED", dateListed: new Date(), dateSold: null, soldPrice: null },
+          data: { status: "LISTED", dateListed: new Date(), dateSold: null, soldPrice: null, feesAmount: null, shippingCost: null },
         });
         updated = res.count;
         break;

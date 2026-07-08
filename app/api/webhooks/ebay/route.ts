@@ -4,6 +4,8 @@ import { prisma } from "@/lib/db";
 import { recalcPalletStatus } from "@/lib/pallets";
 import { parseMoney } from "@/lib/api";
 import { logActivity } from "@/lib/activity";
+import { estimateFees } from "@/lib/fees";
+import { getFeeRates } from "@/lib/settings";
 
 /**
  * Endpoint for eBay Platform Notifications / a polling cron to report sales.
@@ -37,11 +39,13 @@ export async function POST(req: NextRequest) {
   if (!item) return NextResponse.json({ error: "Unknown listing" }, { status: 404 });
   if (item.status === "SOLD") return NextResponse.json({ ok: true, already: true });
 
+  const soldPrice = parseMoney(body.soldPrice) ?? item.sellPrice?.toNumber() ?? null;
   await prisma.item.update({
     where: { id: item.id },
     data: {
       status: "SOLD",
-      soldPrice: parseMoney(body.soldPrice) ?? item.sellPrice,
+      soldPrice,
+      feesAmount: item.feesAmount ?? estimateFees(soldPrice, "EBAY", await getFeeRates()),
       dateSold: new Date(),
       orderId: typeof body.orderId === "string" ? body.orderId : null,
       platform: "EBAY",
