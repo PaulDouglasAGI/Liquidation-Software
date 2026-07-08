@@ -211,7 +211,7 @@ export default function InventoryTable({
                   <td className={tdCls}>
                     <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggle(r.id)} />
                   </td>
-                  <td className={tdCls}>
+                  <td className={tdCls + " whitespace-nowrap"}>
                     <Link href={`/items/${r.id}`} className={`${monoCls} text-accent hover:underline`}>{r.sku}</Link>
                   </td>
                   <td className={tdCls + " max-w-72"}>

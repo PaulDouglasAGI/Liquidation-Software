@@ -86,7 +86,7 @@ export default async function PalletDetail({ params }: { params: Promise<{ id: s
             <tbody>
               {pallet.items.map((i) => (
                 <tr key={i.id} className="hover:bg-raised/60">
-                  <td className={tdCls}>
+                  <td className={tdCls + " whitespace-nowrap"}>
                     <Link href={`/items/${i.id}`} className={`${monoCls} text-accent hover:underline`}>{i.sku}</Link>
                   </td>
                   <td className={tdCls}>{i.name}</td>

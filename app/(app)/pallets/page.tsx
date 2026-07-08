@@ -65,7 +65,7 @@ export default async function PalletsPage() {
           <tbody>
             {rows.map((p) => (
               <tr key={p.id} className="hover:bg-raised/60">
-                <td className={tdCls}>
+                <td className={tdCls + " whitespace-nowrap"}>
                   <Link href={`/pallets/${p.id}`} className={`${monoCls} text-accent hover:underline`}>{p.code}</Link>
                 </td>
                 <td className={tdCls}>{p.supplier}</td>

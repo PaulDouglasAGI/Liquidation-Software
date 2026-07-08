@@ -90,7 +90,7 @@ export default function RepriceSuggestions({
                 <td className={tdCls}>
                   <input type="checkbox" checked={checked.has(s.id)} onChange={() => toggle(s.id)} />
                 </td>
-                <td className={tdCls}>
+                <td className={tdCls + " whitespace-nowrap"}>
                   <Link href={`/items/${s.id}`} className={`${monoCls} text-accent hover:underline`}>{s.sku}</Link>
                 </td>
                 <td className={tdCls + " max-w-64"}><div className="truncate">{s.name}</div></td>

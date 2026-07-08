@@ -49,6 +49,7 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
         notes: item.notes,
         palletId: item.pallet.id,
         palletCode: item.pallet.palletCode,
+        updatedAt: item.updatedAt.toISOString(),
       }}
       locations={locations.map((l) => l.code)}
     />

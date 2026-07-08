@@ -213,7 +213,7 @@ function CredsSection({
           <div key={key}>
             <label className={labelCls}>
               {labelText}{" "}
-              <span className={credStatus[key] === "unset" ? "text-danger" : "text-ok"}>
+              <span className={credStatus[key] === "unset" ? "text-muted" : "text-ok"}>
                 [{credStatus[key] === "db" ? "saved" : credStatus[key] === "env" ? "env" : "not set"}]
               </span>
             </label>

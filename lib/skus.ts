@@ -63,6 +63,38 @@ export async function createItemWithSku(
   }
 }
 
+/**
+ * Creates N identical items (distinct sequential SKUs) atomically — createMany
+ * is a single statement, so a failure can never leave a partial batch behind
+ * (a partial batch + retry would silently duplicate units). Retries the whole
+ * batch on a SKU-uniqueness race. Serial numbers are unit-specific, so only
+ * the first row keeps one.
+ */
+export async function createItemsWithSkus(
+  palletId: string,
+  data: Omit<Prisma.ItemUncheckedCreateInput, "sku" | "palletId">,
+  qty: number
+) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const firstSku = await nextItemSku(palletId);
+      const prefix = firstSku.slice(0, firstSku.lastIndexOf("-") + 1);
+      const start = parseInt(firstSku.slice(prefix.length), 10);
+      const rows = Array.from({ length: qty }, (_, n) => ({
+        ...data,
+        serialNumber: n === 0 ? data.serialNumber : null,
+        palletId,
+        sku: `${prefix}${String(start + n).padStart(3, "0")}`,
+      }));
+      await prisma.item.createMany({ data: rows });
+      return await prisma.item.findUniqueOrThrow({ where: { sku: firstSku } });
+    } catch (e) {
+      if (isUniqueViolation(e) && attempt < 3) continue;
+      throw e;
+    }
+  }
+}
+
 /** Creates a pallet with a generated code, retrying on the same kind of race. */
 export async function createPalletWithCode(
   data: Omit<Prisma.PalletUncheckedCreateInput, "palletCode">

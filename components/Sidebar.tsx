@@ -29,7 +29,7 @@ export default function Sidebar({ userName }: { userName: string }) {
   return (
     <aside className="flex w-full shrink-0 flex-row items-center justify-between border-b border-edge bg-surface md:min-h-screen md:w-44 md:flex-col md:items-stretch md:justify-start md:border-b-0 md:border-r">
       <div className="flex items-center gap-2 px-3 py-3 md:border-b md:border-edge">
-        <Link href="/" className="font-mono text-base font-bold text-accent">LIQ-OPS</Link>
+        <Link href="/" className="whitespace-nowrap font-mono text-base font-bold text-accent">LIQ-OPS</Link>
         <span className="font-mono text-[10px] text-muted">v4</span>
         <span className="ml-auto md:ml-0"><ScanFind /></span>
       </div>

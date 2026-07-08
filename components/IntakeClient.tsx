@@ -80,7 +80,8 @@ export default function IntakeClient({
   const nameRef = useRef<HTMLInputElement>(null);
 
   const pallet = pallets.find((p) => p.id === palletId);
-  const costEstimate = pallet && pallet.itemCount >= 0 ? pallet.totalCost / (pallet.itemCount + savedCount + 1) : 0;
+  // Mirrors the server's spread: pallet cost ÷ (existing + this batch)
+  const costEstimate = pallet ? pallet.totalCost / (pallet.itemCount + savedCount + qty) : 0;
 
   const set = (k: keyof typeof emptyForm) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
@@ -141,9 +142,11 @@ export default function IntakeClient({
 
   function addPhotos(files: FileList | null) {
     if (!files) return;
-    setPhotos((cur) =>
-      [...cur, ...Array.from(files).map((file) => ({ file, url: URL.createObjectURL(file) }))].slice(0, 8)
-    );
+    setPhotos((cur) => {
+      const room = Math.max(0, 8 - cur.length);
+      const accepted = Array.from(files).slice(0, room);
+      return [...cur, ...accepted.map((file) => ({ file, url: URL.createObjectURL(file) }))];
+    });
   }
   function removePhoto(url: string) {
     URL.revokeObjectURL(url);
@@ -168,6 +171,7 @@ export default function IntakeClient({
 
   // ---- barcode scanning ----
   async function startScan() {
+    if (scannerRef.current) await stopScan(); // never stack a second instance on the same div
     setScanning(true);
     setLookupMsg("");
     try {
@@ -270,12 +274,18 @@ export default function IntakeClient({
         setSaving(false);
         return;
       }
+      // Item is created from here on — a photo-upload failure must NOT fall
+      // into the offline-queue catch (that would re-create the item on sync).
       let photoNote = "";
       if (photos.length > 0) {
-        const fd = new FormData();
-        photos.slice(0, 8).forEach((p) => fd.append("photos", p.file));
-        const up = await fetch(`/api/items/${data.id}/photos`, { method: "POST", body: fd });
-        photoNote = up.ok ? ` · ${photos.length} photo(s)` : " · photo upload FAILED";
+        try {
+          const fd = new FormData();
+          photos.slice(0, 8).forEach((p) => fd.append("photos", p.file));
+          const up = await fetch(`/api/items/${data.id}/photos`, { method: "POST", body: fd });
+          photoNote = up.ok ? ` · ${photos.length} photo(s)` : " · photo upload FAILED — add them on the item page";
+        } catch {
+          photoNote = " · photos didn't upload (offline?) — add them on the item page";
+        }
       }
       setSavedCount((c) => c + (data.count ?? 1));
       setSaveMsg({ ok: true, text: `Saved ${data.sku}${data.count > 1 ? ` ×${data.count}` : ""}${photoNote}` });

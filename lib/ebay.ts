@@ -37,8 +37,8 @@ function authHost() {
   return process.env.EBAY_ENV === "SANDBOX" ? "https://auth.sandbox.ebay.com" : "https://auth.ebay.com";
 }
 
-/** Consent-screen URL for the Connect eBay button. */
-export async function oauthAuthorizeUrl(): Promise<string> {
+/** Consent-screen URL for the Connect eBay button. `state` is the CSRF token. */
+export async function oauthAuthorizeUrl(state: string): Promise<string> {
   const { appId } = await creds();
   const ruName = await getCred("ebay.ruName", "EBAY_RU_NAME");
   if (!appId || !ruName) {
@@ -51,6 +51,7 @@ export async function oauthAuthorizeUrl(): Promise<string> {
     redirect_uri: ruName, // eBay uses the RuName, not a literal URL
     response_type: "code",
     scope: USER_SCOPES,
+    state,
   });
   return `${authHost()}/oauth2/authorize?${q}`;
 }
@@ -80,9 +81,14 @@ let cachedUserToken: { token: string; expiresAt: number } | null = null;
 
 /** Short-lived user access token from the stored refresh token, or null when not connected. */
 export async function getUserAccessToken(): Promise<string | null> {
-  if (cachedUserToken && cachedUserToken.expiresAt > Date.now() + 60_000) return cachedUserToken.token;
+  // Check the stored refresh token FIRST: after a Disconnect, a still-warm
+  // cached access token must not keep listing on the old account.
   const refreshToken = (await getSetting("ebay.refreshToken")) || process.env.EBAY_REFRESH_TOKEN || "";
-  if (!refreshToken) return null;
+  if (!refreshToken) {
+    cachedUserToken = null;
+    return null;
+  }
+  if (cachedUserToken && cachedUserToken.expiresAt > Date.now() + 60_000) return cachedUserToken.token;
   const { appId, certId } = await creds();
   if (!appId || !certId) return null;
   const res = await fetch(`${hosts().api}/identity/v1/oauth2/token`, {

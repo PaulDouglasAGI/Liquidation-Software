@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { apiUser, badRequest, notFound, parseMoney, serverError, unauthorized } from "@/lib/api";
-import { createItemWithSku } from "@/lib/skus";
+import { createItemsWithSkus } from "@/lib/skus";
 import { recalcPalletStatus } from "@/lib/pallets";
 import { getSettingNum } from "@/lib/settings";
 import { CATEGORIES, CONDITIONS } from "@/lib/constants";
@@ -31,11 +31,13 @@ export async function POST(req: NextRequest) {
     const qtyRaw = parseInt(String(b.qty ?? "1"), 10);
     const qty = Number.isFinite(qtyRaw) ? Math.min(Math.max(qtyRaw, 1), 50) : 1;
 
-    // Default cost: pallet cost spread across items including the new ones.
-    let ourCost = parseMoney(b.ourCost);
-    if (ourCost === null) {
-      ourCost = Math.round((pallet.totalCost.toNumber() / (pallet._count.items + qty)) * 100) / 100;
-    }
+    // Default cost: even spread of the pallet cost. Snapshotting at creation
+    // time drifts badly (the first scanned item would carry the whole pallet
+    // cost), so when the cost is auto-derived we re-spread across the pallet's
+    // unsold items after creating — same behavior as manifest import.
+    const explicitCost = parseMoney(b.ourCost);
+    const ourCost =
+      explicitCost ?? Math.round((pallet.totalCost.toNumber() / (pallet._count.items + qty)) * 100) / 100;
 
     // Default sell price: configured % of MSRP.
     let sellPrice = parseMoney(b.sellPrice);
@@ -63,10 +65,17 @@ export async function POST(req: NextRequest) {
         notes: typeof b.notes === "string" && b.notes.trim() ? b.notes.trim() : null,
     };
 
-    const first = await createItemWithSku(palletId, data);
-    for (let n = 1; n < qty; n++) {
-      // Serial numbers are unit-specific; only the first copy keeps it.
-      await createItemWithSku(palletId, { ...data, serialNumber: null });
+    const first = await createItemsWithSkus(palletId, data, qty);
+
+    if (explicitCost === null) {
+      const total = await prisma.item.count({ where: { palletId } });
+      const per = Math.round((pallet.totalCost.toNumber() / total) * 100) / 100;
+      // Only unlisted stock: once an item is listed or sold its cost is
+      // settled — listings keep their margin, P&L history stays put.
+      await prisma.item.updateMany({
+        where: { palletId, status: "IN_STOCK" },
+        data: { ourCost: per },
+      });
     }
     await recalcPalletStatus(palletId);
     logActivity(user.name, "item.create", qty > 1 ? `${first.sku} ×${qty} — ${name}` : `${first.sku} — ${name}`);

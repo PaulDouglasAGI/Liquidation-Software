@@ -39,6 +39,7 @@ export interface ItemData {
   notes: string | null;
   palletId: string;
   palletCode: string;
+  updatedAt: string;
 }
 
 interface MarketResult {
@@ -98,12 +99,14 @@ export default function ItemEditor({ item, locations }: { item: ItemData; locati
   const margin = profit !== null && price > 0 ? (profit / price) * 100 : null;
 
   async function save() {
+    if (busy) return;
     setBusy(true);
     setMsg(null);
     const res = await fetch(`/api/items/${item.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
+      // expectedUpdatedAt: refuse to overwrite changes made elsewhere
+      body: JSON.stringify({ ...form, expectedUpdatedAt: item.updatedAt }),
     });
     const data = await res.json().catch(() => ({}));
     setBusy(false);

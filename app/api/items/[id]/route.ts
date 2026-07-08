@@ -28,6 +28,20 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     const existing = await prisma.item.findUnique({ where: { id } });
     if (!existing) return notFound("Item not found");
 
+    // Optimistic concurrency: the full-form editor sends the updatedAt it
+    // loaded with. A mismatch means the item changed elsewhere (another tab,
+    // a teammate, a webhook sale) — refuse rather than silently overwrite,
+    // e.g. a stale Save resurrecting a sold item back to LISTED.
+    if (typeof b.expectedUpdatedAt === "string") {
+      const expected = new Date(b.expectedUpdatedAt).getTime();
+      if (Number.isFinite(expected) && expected !== existing.updatedAt.getTime()) {
+        return NextResponse.json(
+          { error: "This item was changed since you opened it (another tab or teammate?). Reload the page, then save." },
+          { status: 409 }
+        );
+      }
+    }
+
     const data: Record<string, unknown> = {};
 
     // Money fields: empty string clears the value, an unparseable or negative
@@ -83,10 +97,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       // Stamp lifecycle dates on transitions
       if (b.status === "LISTED" && existing.status !== "LISTED") {
         // Fresh (re)listing: restamp the aging clock and clear any previous
-        // sale so a later re-sale isn't booked on the old date/price.
+        // sale/return so a later re-sale isn't booked on stale data.
         if (b.dateListed === undefined) data.dateListed = new Date();
         if (b.dateSold === undefined) data.dateSold = null;
         if (b.soldPrice === undefined || b.soldPrice === "") data.soldPrice = null;
+        data.dateReturned = null;
+        if (b.returnReason === undefined) data.returnReason = null;
       }
       if (b.status === "RETURNED" && existing.status !== "RETURNED") {
         // Sale reversal: the item drops out of SOLD-based revenue by status;

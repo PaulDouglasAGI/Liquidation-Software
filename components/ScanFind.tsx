@@ -15,6 +15,7 @@ export default function ScanFind() {
   const [manual, setManual] = useState("");
   const [msg, setMsg] = useState("");
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const openRef = useRef(false); // mirrors `open` for checks after awaits
 
   async function stopScanner() {
     const s = scannerRef.current;
@@ -30,6 +31,7 @@ export default function ScanFind() {
   }
 
   async function close() {
+    openRef.current = false;
     await stopScanner();
     setOpen(false);
     setMsg("");
@@ -56,12 +58,15 @@ export default function ScanFind() {
   }
 
   async function openAndScan() {
+    if (openRef.current || scannerRef.current) return; // double-tap guard
+    openRef.current = true;
     setOpen(true);
     setMsg("");
     try {
       const { Html5Qrcode } = await import("html5-qrcode");
       // wait a tick for the overlay div to mount
       await new Promise((r) => setTimeout(r, 50));
+      if (!openRef.current) return; // closed while loading
       const scanner = new Html5Qrcode("find-scanner");
       scannerRef.current = scanner;
       await scanner.start(
@@ -73,8 +78,11 @@ export default function ScanFind() {
         },
         () => {}
       );
+      // Overlay dismissed while the camera was still starting up? Shut it
+      // down now — otherwise the camera stays on with no way to stop it.
+      if (!openRef.current) await stopScanner();
     } catch {
-      setMsg("Camera unavailable — type the SKU or UPC below");
+      if (openRef.current) setMsg("Camera unavailable — type the SKU or UPC below");
     }
   }
 
