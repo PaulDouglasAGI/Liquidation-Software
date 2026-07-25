@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { inputCls, btnCls, btnPrimaryCls, labelCls, monoCls, panelCls, thCls, tdCls, inputNarrowCls, selectNarrowCls } from "@/components/ui";
-import { CATEGORIES, label } from "@/lib/constants";
+import { CATEGORIES, ROLES, label } from "@/lib/constants";
 import RestoreBackup from "@/components/RestoreBackup";
 import EbaySync from "@/components/EbaySync";
 
@@ -15,8 +15,9 @@ interface Props {
   credStatus: Record<string, CredStatus>;
   templates: { category: string; titleTemplate: string; descriptionTemplate: string }[];
   locations: { code: string; notes: string | null }[];
-  users: { id: string; email: string; name: string; createdAt: string }[];
+  users: { id: string; email: string; name: string; role: string; createdAt: string }[];
   myUserId: string;
+  amOwner: boolean;
   ebayConnected: boolean;
 }
 
@@ -35,7 +36,7 @@ function credPlaceholder(status: CredStatus) {
   return "not set";
 }
 
-export default function SettingsClient({ numbers, fees, credStatus, templates, locations, users, myUserId, ebayConnected }: Props) {
+export default function SettingsClient({ numbers, fees, credStatus, templates, locations, users, myUserId, amOwner, ebayConnected }: Props) {
   const router = useRouter();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -75,52 +76,59 @@ export default function SettingsClient({ numbers, fees, credStatus, templates, l
 
       <PricingSection numbers={numbers} onSave={saveSettings} />
       <PlatformFeesSection fees={fees} onSave={saveSettings} />
-      <EbayConnectSection connected={ebayConnected} onDisconnect={() => clearSettings(["ebay.refreshToken"])} />
-      <CredsSection
-        title="eBay API credentials"
-        fields={[
-          ["ebay.appId", "App ID (Client ID)"],
-          ["ebay.certId", "Cert ID (Client Secret)"],
-          ["ebay.devId", "Dev ID"],
-          ["ebay.ruName", "RuName (redirect URL name)"],
-          ["ebay.authToken", "Auth Token (legacy — not needed once connected)"],
-        ]}
-        credStatus={credStatus}
-        onSave={saveSettings}
-        onClear={clearSettings}
-      />
-      <CredsSection
-        title="Amazon SP-API credentials"
-        fields={[
-          ["amazon.accessKey", "Access Key"],
-          ["amazon.secretKey", "Secret Key"],
-          ["amazon.sellerId", "Seller ID"],
-          ["amazon.marketplaceId", "Marketplace ID"],
-        ]}
-        credStatus={credStatus}
-        onSave={saveSettings}
-        onClear={clearSettings}
-      />
-      <CredsSection
-        title="UPC lookup (upcitemdb.com)"
-        fields={[["upc.apiKey", "API key (optional — trial endpoint used when empty)"]]}
-        credStatus={credStatus}
-        onSave={saveSettings}
-        onClear={clearSettings}
-      />
+      {/* Marketplace credentials can list and move money, so they are owner-only. */}
+      {amOwner ? (
+        <>
+          <EbayConnectSection connected={ebayConnected} onDisconnect={() => clearSettings(["ebay.refreshToken"])} />
+          <CredsSection
+            title="eBay API credentials"
+            fields={[
+              ["ebay.appId", "App ID (Client ID)"],
+              ["ebay.certId", "Cert ID (Client Secret)"],
+              ["ebay.devId", "Dev ID"],
+              ["ebay.ruName", "RuName (redirect URL name)"],
+              ["ebay.authToken", "Auth Token (legacy — not needed once connected)"],
+            ]}
+            credStatus={credStatus}
+            onSave={saveSettings}
+            onClear={clearSettings}
+          />
+          <CredsSection
+            title="Amazon SP-API credentials"
+            fields={[
+              ["amazon.accessKey", "Access Key"],
+              ["amazon.secretKey", "Secret Key"],
+              ["amazon.sellerId", "Seller ID"],
+              ["amazon.marketplaceId", "Marketplace ID"],
+            ]}
+            credStatus={credStatus}
+            onSave={saveSettings}
+            onClear={clearSettings}
+          />
+          <CredsSection
+            title="UPC lookup (upcitemdb.com)"
+            fields={[["upc.apiKey", "API key (optional — trial endpoint used when empty)"]]}
+            credStatus={credStatus}
+            onSave={saveSettings}
+            onClear={clearSettings}
+          />
+        </>
+      ) : null}
       <TemplatesSection templates={templates} />
       <LocationsSection locations={locations} />
-      <UsersSection users={users} myUserId={myUserId} />
+      <UsersSection users={users} myUserId={myUserId} amOwner={amOwner} />
       <Section title="Backup, restore & export">
         <div className="flex flex-wrap items-center gap-2">
           <a className={btnPrimaryCls} href="/api/backup">Download full backup (JSON)</a>
           <a className={btnCls} href={"/api/items/export?" + new URLSearchParams({ sort: "sku" })}>Export all items (CSV)</a>
-          <RestoreBackup />
+          {/* Restore wipes every pallet, item, and expense — owner-only. */}
+          {amOwner ? <RestoreBackup /> : null}
         </div>
         <p className="mt-2 text-[12px] text-muted">
           The backup contains every pallet, item, expense, and purchase (no passwords, no API keys).
           Restoring replaces all business data — use it to move from a phone install to a server, or to recover.
           Item photo files live in the uploads folder — copy that separately if you need the pictures.
+          {amOwner ? null : " Restoring is limited to owners."}
         </p>
       </Section>
     </div>
@@ -405,9 +413,9 @@ function LocationsSection({ locations }: { locations: Props["locations"] }) {
   );
 }
 
-function UsersSection({ users, myUserId }: { users: Props["users"]; myUserId: string }) {
+function UsersSection({ users, myUserId, amOwner }: { users: Props["users"]; myUserId: string; amOwner: boolean }) {
   const router = useRouter();
-  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [form, setForm] = useState({ name: "", email: "", password: "", role: "STAFF" });
   const [err, setErr] = useState("");
 
   async function add(e: React.FormEvent) {
@@ -420,7 +428,7 @@ function UsersSection({ users, myUserId }: { users: Props["users"]; myUserId: st
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      setForm({ name: "", email: "", password: "" });
+      setForm({ name: "", email: "", password: "", role: "STAFF" });
       router.refresh();
     } else {
       setErr(data.error ?? "Failed to add user");
@@ -433,6 +441,44 @@ function UsersSection({ users, myUserId }: { users: Props["users"]; myUserId: st
     const data = await res.json().catch(() => ({}));
     if (!res.ok) setErr(data.error ?? "Failed");
     router.refresh();
+  }
+
+  async function setRole(id: string, role: string) {
+    setErr("");
+    const res = await fetch(`/api/users/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) setErr(data.error ?? "Failed to change role");
+    router.refresh();
+  }
+
+  if (!amOwner) {
+    return (
+      <Section title="Team members">
+        <table className="w-full max-w-xl text-[13px]">
+          <thead>
+            <tr>
+              <th className={thCls}>Name</th>
+              <th className={thCls}>Email</th>
+              <th className={thCls}>Role</th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.map((u) => (
+              <tr key={u.id}>
+                <td className={tdCls}>{u.name}{u.id === myUserId ? <span className="ml-1 text-[11px] text-muted">(you)</span> : null}</td>
+                <td className={tdCls}>{u.email}</td>
+                <td className={tdCls}>{label(u.role)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="mt-2 text-[12px] text-muted">Only an owner can add, remove, or re-role team members.</p>
+      </Section>
+    );
   }
 
   return (
@@ -450,6 +496,12 @@ function UsersSection({ users, myUserId }: { users: Props["users"]; myUserId: st
           <label className={labelCls}>Password (min 8 chars)</label>
           <input type="password" required minLength={8} className={inputNarrowCls + " w-40"} value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} />
         </div>
+        <div>
+          <label className={labelCls}>Role</label>
+          <select className={inputNarrowCls + " w-28"} value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}>
+            {ROLES.map((r) => <option key={r} value={r}>{label(r)}</option>)}
+          </select>
+        </div>
         <button type="submit" className={btnPrimaryCls}>Add member</button>
         {err ? <span className="text-[12px] text-danger">{err}</span> : null}
       </form>
@@ -458,6 +510,7 @@ function UsersSection({ users, myUserId }: { users: Props["users"]; myUserId: st
           <tr>
             <th className={thCls}>Name</th>
             <th className={thCls}>Email</th>
+            <th className={thCls}>Role</th>
             <th className={thCls}>Added</th>
             <th className={thCls + " w-8"} />
           </tr>
@@ -467,6 +520,15 @@ function UsersSection({ users, myUserId }: { users: Props["users"]; myUserId: st
             <tr key={u.id}>
               <td className={tdCls}>{u.name}{u.id === myUserId ? <span className="ml-1 text-[11px] text-muted">(you)</span> : null}</td>
               <td className={tdCls}>{u.email}</td>
+              <td className={tdCls}>
+                <select
+                  className={inputNarrowCls + " w-24"}
+                  value={u.role}
+                  onChange={(e) => void setRole(u.id, e.target.value)}
+                >
+                  {ROLES.map((r) => <option key={r} value={r}>{label(r)}</option>)}
+                </select>
+              </td>
               <td className={tdCls}>{new Date(u.createdAt).toLocaleDateString()}</td>
               <td className={tdCls}>
                 {u.id !== myUserId ? (
@@ -477,6 +539,9 @@ function UsersSection({ users, myUserId }: { users: Props["users"]; myUserId: st
           ))}
         </tbody>
       </table>
+      <p className="mt-2 text-[12px] text-muted">
+        Owners manage the team, API credentials, and backup restores. Staff run everything else.
+      </p>
     </Section>
   );
 }

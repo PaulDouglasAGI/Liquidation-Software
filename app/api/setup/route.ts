@@ -29,7 +29,8 @@ export async function POST(req: NextRequest) {
     const user = await prisma.$transaction(
       async (tx) => {
         if ((await tx.user.count()) > 0) throw new Error("SETUP_DONE");
-        return tx.user.create({ data: { name, email, passwordHash } });
+        // The person who sets the app up owns it.
+        return tx.user.create({ data: { name, email, passwordHash, role: "OWNER" } });
       },
       { isolationLevel: "Serializable" }
     ).catch((e) => {

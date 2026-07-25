@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { apiUser, badRequest, notFound, parseMoney, serverError, unauthorized } from "@/lib/api";
-import { createItemWithSku } from "@/lib/skus";
+import { createItemBatches, isUniqueViolation, type ItemBatch } from "@/lib/skus";
 import { recalcPalletStatus } from "@/lib/pallets";
 import { getSettingNum } from "@/lib/settings";
 import { CATEGORIES, CONDITIONS } from "@/lib/constants";
@@ -9,6 +9,8 @@ import { logActivity } from "@/lib/activity";
 
 const MAX_ROWS = 500;
 const MAX_QTY_PER_ROW = 50;
+// A 500-row manifest at 50 units each is 25k inserts; give the batch room.
+const TX_OPTS = { timeout: 60_000, maxWait: 10_000 };
 
 interface ImportRow {
   name?: unknown;
@@ -25,6 +27,10 @@ interface ImportRow {
  * Bulk-create items on a pallet from a parsed manifest CSV.
  * Body: { rows: [{ name, upc?, brand?, msrp?, qty?, condition?, category?, notes? }] }
  * A row with qty N creates N individual items (unit-level inventory).
+ *
+ * The whole import is one transaction: it either lands completely or not at
+ * all, so a failure halfway can't leave a pallet holding a partial manifest
+ * that a retry would then duplicate.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await apiUser();
@@ -40,7 +46,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (rows.length > MAX_ROWS) return badRequest(`Too many rows (max ${MAX_ROWS} per import)`);
 
     const pctOfMsrp = await getSettingNum("defaultPricePct");
-    let created = 0;
+    const batches: ItemBatch[] = [];
     const errors: string[] = [];
 
     for (const [idx, raw] of rows.entries()) {
@@ -62,33 +68,49 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const condition = (CONDITIONS as readonly string[]).includes(conditionRaw) ? conditionRaw : "GOOD";
       const category = (CATEGORIES as readonly string[]).includes(String(raw.category)) ? String(raw.category) : pallet.category;
 
-      for (let n = 0; n < qty; n++) {
-        await createItemWithSku(id, {
-            name,
-            upc: typeof raw.upc === "string" && raw.upc.trim() ? raw.upc.replace(/\D/g, "") || null : null,
-            brand: typeof raw.brand === "string" && raw.brand.trim() ? raw.brand.trim() : null,
-            category: category as never,
-            condition: condition as never,
-            msrp,
-            sellPrice,
-            notes: typeof raw.notes === "string" && raw.notes.trim() ? raw.notes.trim() : null,
-        });
-        created++;
-      }
-    }
-
-    // Spread pallet cost across items (manifest imports usually happen before
-    // per-item costs are known). SOLD items keep their booked cost — changing
-    // it would retroactively rewrite P&L margins.
-    const total = await prisma.item.count({ where: { palletId: id } });
-    if (total > 0) {
-      const per = Math.round((pallet.totalCost.toNumber() / total) * 100) / 100;
-      await prisma.item.updateMany({
-        where: { palletId: id, status: { not: "SOLD" } },
-        data: { ourCost: per },
+      batches.push({
+        qty,
+        data: {
+          name,
+          upc: typeof raw.upc === "string" && raw.upc.trim() ? raw.upc.replace(/\D/g, "") || null : null,
+          brand: typeof raw.brand === "string" && raw.brand.trim() ? raw.brand.trim() : null,
+          category: category as never,
+          condition: condition as never,
+          msrp,
+          sellPrice,
+          notes: typeof raw.notes === "string" && raw.notes.trim() ? raw.notes.trim() : null,
+        },
       });
     }
-    await recalcPalletStatus(id);
+
+    // Retry the whole transaction on a SKU race — a unique violation aborts the
+    // transaction, so the retry has to restart it rather than resume inside.
+    let created = 0;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        created = await prisma.$transaction(async (tx) => {
+          const n = await createItemBatches(id, batches, tx);
+
+          // Spread pallet cost across items (manifest imports usually happen
+          // before per-item costs are known). SOLD items keep their booked
+          // cost — changing it would retroactively rewrite P&L margins.
+          const total = await tx.item.count({ where: { palletId: id } });
+          if (total > 0) {
+            const per = Math.round((pallet.totalCost.toNumber() / total) * 100) / 100;
+            await tx.item.updateMany({
+              where: { palletId: id, status: { not: "SOLD" } },
+              data: { ourCost: per },
+            });
+          }
+          await recalcPalletStatus(id, tx);
+          return n;
+        }, TX_OPTS);
+        break;
+      } catch (e) {
+        if (isUniqueViolation(e) && attempt < 3) continue;
+        throw e;
+      }
+    }
 
     if (created > 0) logActivity(user.name, "pallet.import", `${created} item(s) into ${pallet.palletCode}`);
     return NextResponse.json({ ok: true, created, skipped: errors.length, errors: errors.slice(0, 20) });

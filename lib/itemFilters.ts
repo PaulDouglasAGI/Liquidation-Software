@@ -1,5 +1,5 @@
-import "server-only";
-import { Prisma } from "@prisma/client";
+// Pure query-building from URL params — no DB access, so it stays unit-testable.
+import type { Prisma } from "@prisma/client";
 import { CATEGORIES, CONDITIONS, ITEM_STATUSES, PLATFORMS } from "./constants";
 
 export interface ItemFilterParams {
@@ -15,7 +15,7 @@ const inEnum = <T extends readonly string[]>(v: string, allowed: T) =>
   (allowed as readonly string[]).includes(v) ? v : "";
 
 /** Builds a Prisma `where` for the inventory table + CSV export from URL params. */
-export function buildItemWhere(p: ItemFilterParams, agingDays: number): Prisma.ItemWhereInput {
+export function buildItemWhere(p: ItemFilterParams, agingDays: number, now = new Date()): Prisma.ItemWhereInput {
   const where: Prisma.ItemWhereInput = {};
   const and: Prisma.ItemWhereInput[] = [];
 
@@ -67,7 +67,7 @@ export function buildItemWhere(p: ItemFilterParams, agingDays: number): Prisma.I
   if (pick(p, "aging") === "1") {
     and.push({
       status: "LISTED",
-      dateListed: { lte: new Date(Date.now() - agingDays * 86_400_000) },
+      dateListed: { lte: new Date(now.getTime() - agingDays * 86_400_000) },
     });
   }
 

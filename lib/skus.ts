@@ -1,46 +1,42 @@
 import "server-only";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db";
+import { formatCode, itemSkuPrefix, maxSuffix, palletCodePrefix, sequence, suffixOf } from "./skuFormat";
 
-/** Highest numeric suffix among codes sharing a prefix (robust past 999). */
-function maxSuffix(codes: string[], prefix: string): number {
-  let max = 0;
-  for (const code of codes) {
-    const n = parseInt(code.slice(prefix.length), 10);
-    if (Number.isFinite(n) && n > max) max = n;
-  }
-  return max;
-}
+/** Either the base client or a transaction handle. */
+type Db = Prisma.TransactionClient | typeof prisma;
 
-const isUniqueViolation = (e: unknown) =>
+export const isUniqueViolation = (e: unknown) =>
   e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
 
 /** Next pallet code for the current year, e.g. PAL-2026-001. */
-export async function nextPalletCode(): Promise<string> {
-  const year = new Date().getFullYear();
-  const prefix = `PAL-${year}-`;
-  const existing = await prisma.pallet.findMany({
+export async function nextPalletCode(db: Db = prisma): Promise<string> {
+  const prefix = palletCodePrefix(new Date().getFullYear());
+  const existing = await db.pallet.findMany({
     where: { palletCode: { startsWith: prefix } },
     select: { palletCode: true },
   });
-  const n = maxSuffix(existing.map((p) => p.palletCode), prefix) + 1;
-  return `${prefix}${String(n).padStart(3, "0")}`;
+  return formatCode(prefix, maxSuffix(existing.map((p) => p.palletCode), prefix) + 1);
 }
 
-/** Next item SKU within a pallet, e.g. ITM-PAL001-001 (PAL-2026-001 -> PAL001). */
-export async function nextItemSku(palletId: string): Promise<string> {
-  const pallet = await prisma.pallet.findUniqueOrThrow({
+/** Prefix + next free number for items on a pallet, e.g. ITM-PAL001- / 4. */
+export async function nextItemSkuParts(palletId: string, db: Db = prisma) {
+  const pallet = await db.pallet.findUniqueOrThrow({
     where: { id: palletId },
     select: { palletCode: true },
   });
-  const seq = pallet.palletCode.split("-").pop() ?? "000";
-  const prefix = `ITM-PAL${seq}-`;
-  const existing = await prisma.item.findMany({
+  const prefix = itemSkuPrefix(pallet.palletCode);
+  const existing = await db.item.findMany({
     where: { sku: { startsWith: prefix } },
     select: { sku: true },
   });
-  const n = maxSuffix(existing.map((i) => i.sku), prefix) + 1;
-  return `${prefix}${String(n).padStart(3, "0")}`;
+  return { prefix, next: maxSuffix(existing.map((i) => i.sku), prefix) + 1 };
+}
+
+/** Next item SKU within a pallet, e.g. ITM-PAL001-001. */
+export async function nextItemSku(palletId: string, db: Db = prisma): Promise<string> {
+  const { prefix, next } = await nextItemSkuParts(palletId, db);
+  return formatCode(prefix, next);
 }
 
 /**
@@ -79,20 +75,56 @@ export async function createItemsWithSkus(
     try {
       const firstSku = await nextItemSku(palletId);
       const prefix = firstSku.slice(0, firstSku.lastIndexOf("-") + 1);
-      const start = parseInt(firstSku.slice(prefix.length), 10);
-      const rows = Array.from({ length: qty }, (_, n) => ({
-        ...data,
-        serialNumber: n === 0 ? data.serialNumber : null,
-        palletId,
-        sku: `${prefix}${String(start + n).padStart(3, "0")}`,
-      }));
-      await prisma.item.createMany({ data: rows });
+      const skus = sequence(prefix, suffixOf(firstSku, prefix), qty);
+      await prisma.item.createMany({
+        data: skus.map((sku, n) => ({
+          ...data,
+          serialNumber: n === 0 ? data.serialNumber : null,
+          palletId,
+          sku,
+        })),
+      });
       return await prisma.item.findUniqueOrThrow({ where: { sku: firstSku } });
     } catch (e) {
       if (isUniqueViolation(e) && attempt < 3) continue;
       throw e;
     }
   }
+}
+
+/** One manifest row expanded into `qty` identical units. */
+export interface ItemBatch {
+  data: Omit<Prisma.ItemUncheckedCreateInput, "sku" | "palletId">;
+  qty: number;
+}
+
+/**
+ * Creates every unit from a manifest import in a single createMany, numbering
+ * SKUs sequentially across all rows. One statement instead of thousands of
+ * round-trips, and atomic: an import either lands whole or not at all.
+ */
+export async function createItemBatches(
+  palletId: string,
+  batches: ItemBatch[],
+  db: Db = prisma
+): Promise<number> {
+  const { prefix, next } = await nextItemSkuParts(palletId, db);
+  const rows: Prisma.ItemCreateManyInput[] = [];
+  let n = next;
+  for (const batch of batches) {
+    for (let i = 0; i < batch.qty; i++) {
+      rows.push({
+        ...batch.data,
+        // Serial numbers identify a single unit, so only the first copy keeps one.
+        serialNumber: i === 0 ? batch.data.serialNumber : null,
+        palletId,
+        sku: formatCode(prefix, n++),
+      });
+    }
+  }
+  if (rows.length === 0) return 0;
+  await db.item.createMany({ data: rows });
+  return rows.length;
 }
 
 /** Creates a pallet with a generated code, retrying on the same kind of race. */

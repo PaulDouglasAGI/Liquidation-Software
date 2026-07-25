@@ -7,11 +7,19 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/// OWNER can manage users, restore backups, and change API credentials.
+/// STAFF can run the day-to-day operation but not reshape the business data.
+enum Role {
+  OWNER
+  STAFF
+}
+
 model User {
   id           String    @id @default(cuid())
   email        String    @unique
   name         String
   passwordHash String
+  role         Role      @default(STAFF)
   createdAt    DateTime  @default(now())
   sessions     Session[]
 }

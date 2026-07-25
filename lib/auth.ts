@@ -55,6 +55,18 @@ export async function requireApiUser() {
   return getUser();
 }
 
+export const isOwner = (user: { role?: string } | null | undefined) => user?.role === "OWNER";
+
+/**
+ * For pages that only owners may see: sends staff back to the dashboard
+ * rather than leaking the existence of the screen.
+ */
+export async function requireOwner() {
+  const user = await requireUser();
+  if (!isOwner(user)) redirect("/");
+  return user;
+}
+
 export async function verifyLogin(email: string, password: string) {
   const user = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
   if (!user) return null;

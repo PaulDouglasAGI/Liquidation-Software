@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { apiUser, badRequest, serverError, unauthorized } from "@/lib/api";
+import { badRequest, ownerOrResponse, serverError } from "@/lib/api";
 import { logActivity } from "@/lib/activity";
 
 const MAX_ITEMS = 50_000;
@@ -14,10 +14,12 @@ const asArray = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? v
  * settings). User accounts and saved API credentials are left untouched —
  * backups intentionally contain neither. Photo files are not restored; items
  * keep their photo paths so copying the uploads folder back completes it.
+ *
+ * Owner-only: this destroys every pallet, item, and expense in the install.
  */
 export async function POST(req: NextRequest) {
-  const user = await apiUser();
-  if (!user) return unauthorized();
+  const user = await ownerOrResponse();
+  if (user instanceof NextResponse) return user;
   try {
     const body = await req.json().catch(() => null);
     if (body?.confirm !== true) return badRequest("Missing confirmation flag");

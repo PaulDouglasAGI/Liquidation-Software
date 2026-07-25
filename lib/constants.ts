@@ -27,9 +27,14 @@ export type ItemStatus = (typeof ITEM_STATUSES)[number];
 export const PLATFORMS = ["EBAY", "AMAZON", "FACEBOOK", "OTHER"] as const;
 export type Platform = (typeof PLATFORMS)[number];
 
+export const ROLES = ["OWNER", "STAFF"] as const;
+export type Role = (typeof ROLES)[number];
+
 export const SUPPLIERS = ["Liquidation.com", "B-Stock", "Other"] as const;
 
 export const LABELS: Record<string, string> = {
+  OWNER: "Owner",
+  STAFF: "Staff",
   RECEIVED: "Received",
   IN_PROCESSING: "In Processing",
   PARTIALLY_LISTED: "Partially Listed",

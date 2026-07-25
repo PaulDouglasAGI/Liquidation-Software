@@ -57,6 +57,24 @@ npm run start
 4. Add teammates in **Settings → Team members**; everyone shares the same inventory.
 5. Create your first pallet, hit **Item Intake** on your phone, and start scanning.
 
+### Roles
+
+The account created by the setup wizard is the **owner**. Everyone added
+afterwards defaults to **staff**, and you can change roles any time in
+**Settings → Team members**.
+
+| | Owner | Staff |
+|---|---|---|
+| Pallets, intake, listing, sales, returns, P&L, insights | ✅ | ✅ |
+| Pricing / aging / fee-rate settings | ✅ | ✅ |
+| Add, remove, and re-role team members | ✅ | — |
+| eBay / Amazon / UPC API credentials | ✅ | — |
+| Restore a backup (replaces all business data) | ✅ | — |
+
+The app will not let you delete or demote the last owner, so an install can
+never lock itself out. Repeated failed sign-ins are rate-limited per account
+and per IP.
+
 ## Modules
 
 | Module | Where | Notes |

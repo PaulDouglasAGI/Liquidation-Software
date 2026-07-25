@@ -1,33 +1,35 @@
 import "server-only";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "./db";
+import { decidePalletStatus } from "./palletStatus";
+
+export type { PalletComputedStatus, PalletItemCounts } from "./palletStatus";
+
+/** Either the base client or a transaction handle, so callers can stay atomic. */
+type Db = Prisma.TransactionClient | typeof prisma;
 
 /**
  * Recomputes a pallet's lifecycle status from its items. CLOSED is manual and
- * never overridden.
+ * never overridden. The decision rules live in ./palletStatus (pure + tested).
+ *
+ * Pass the transaction client when calling from inside `$transaction` so the
+ * status can't be derived from a half-applied batch.
  */
-export async function recalcPalletStatus(palletId: string) {
-  const pallet = await prisma.pallet.findUnique({
+export async function recalcPalletStatus(palletId: string, db: Db = prisma) {
+  const pallet = await db.pallet.findUnique({
     where: { id: palletId },
     select: { status: true },
   });
   if (!pallet || pallet.status === "CLOSED") return;
 
-  // Scrapped items are written off — they shouldn't hold a pallet at
-  // "Partially Listed" forever. Returned items DO count as needing action.
   const [total, listedOrBeyond, anyItems] = await Promise.all([
-    prisma.item.count({ where: { palletId, status: { not: "SCRAPPED" } } }),
-    prisma.item.count({ where: { palletId, status: { in: ["LISTED", "SOLD"] } } }),
-    prisma.item.count({ where: { palletId } }),
+    db.item.count({ where: { palletId, status: { not: "SCRAPPED" } } }),
+    db.item.count({ where: { palletId, status: { in: ["LISTED", "SOLD"] } } }),
+    db.item.count({ where: { palletId } }),
   ]);
 
-  let status: "RECEIVED" | "IN_PROCESSING" | "PARTIALLY_LISTED" | "FULLY_LISTED";
-  if (anyItems === 0) status = "RECEIVED";
-  else if (total === 0) status = "FULLY_LISTED"; // everything scrapped — nothing left to do
-  else if (listedOrBeyond === 0) status = "IN_PROCESSING";
-  else if (listedOrBeyond < total) status = "PARTIALLY_LISTED";
-  else status = "FULLY_LISTED";
-
+  const status = decidePalletStatus({ anyItems, total, listedOrBeyond });
   if (status !== pallet.status) {
-    await prisma.pallet.update({ where: { id: palletId }, data: { status } });
+    await db.pallet.update({ where: { id: palletId }, data: { status } });
   }
 }

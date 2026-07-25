@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { isOwner, requireUser } from "@/lib/auth";
 import { getSetting } from "@/lib/settings";
 import SettingsClient from "@/components/SettingsClient";
 
@@ -38,7 +38,7 @@ export default async function SettingsPage() {
       prisma.setting.findMany({ where: { key: { in: [...CRED_KEYS] } }, select: { key: true, value: true } }),
       prisma.listingTemplate.findMany({ orderBy: { category: "asc" } }),
       prisma.storageLocation.findMany({ orderBy: { code: "asc" } }),
-      prisma.user.findMany({ orderBy: { createdAt: "asc" }, select: { id: true, email: true, name: true, createdAt: true } }),
+      prisma.user.findMany({ orderBy: { createdAt: "asc" }, select: { id: true, email: true, name: true, role: true, createdAt: true } }),
       getSetting("defaultPricePct"),
       getSetting("agingDays"),
       getSetting("lowMarginPct"),
@@ -61,8 +61,9 @@ export default async function SettingsPage() {
       credStatus={credStatus}
       templates={templates.map((t) => ({ category: t.category, titleTemplate: t.titleTemplate, descriptionTemplate: t.descriptionTemplate }))}
       locations={locations.map((l) => ({ code: l.code, notes: l.notes }))}
-      users={users.map((u) => ({ id: u.id, email: u.email, name: u.name, createdAt: u.createdAt.toISOString() }))}
+      users={users.map((u) => ({ id: u.id, email: u.email, name: u.name, role: u.role, createdAt: u.createdAt.toISOString() }))}
       myUserId={me.id}
+      amOwner={isOwner(me)}
       ebayConnected={Boolean(ebayRefreshToken || process.env.EBAY_REFRESH_TOKEN)}
     />
   );
