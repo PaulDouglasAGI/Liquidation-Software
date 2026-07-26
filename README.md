@@ -10,7 +10,31 @@ No config files or terminal accounts needed to get going: the **first visit in t
 
 ## Quick start — pick your path
 
-### A) Android phone, free, self-contained (Termux)
+### A) GitHub Codespaces — nothing to install, runs in your browser
+
+The fastest way to try it. On the repo page: **Code ▸ Codespaces ▸ Create codespace on main**.
+
+VS Code opens in your browser and does the rest — installs Node and PostgreSQL,
+sets up the database, and starts the dev server. First build takes a couple of
+minutes; after that a popup offers to open the app (or use the **PORTS** tab and
+click the 🌐 globe next to port 3000).
+
+The first visit walks you through creating your account. Everything you enter
+lives in the Codespace's own database and persists across stops and restarts.
+
+```bash
+npm run dev      # if you ever need to start the server by hand
+npm test         # run the test suite
+```
+
+> Codespaces is free for personal accounts up to a monthly quota, then billed by
+> the hour — **stop the Codespace when you're done** (Code ▸ Codespaces ▸ ⋯ ▸ Stop).
+> Your data is still there next time you start it.
+
+This same setup works in desktop VS Code too: install the **Dev Containers**
+extension, open the folder, and choose **Reopen in Container**.
+
+### B) Android phone, free, self-contained (Termux)
 
 Install [Termux from F-Droid](https://f-droid.org/en/packages/com.termux/), open it, and run:
 
@@ -28,7 +52,7 @@ Open **http://localhost:3000** in Chrome, create your account in the wizard, and
 
 > If the GitHub repo is private, the installer will ask you to paste a GitHub token so it can download the code.
 
-### B) Docker (a real server, home PC, or NAS — one command)
+### C) Docker (a real server, home PC, or NAS — one command)
 
 ```bash
 git clone https://github.com/PaulDouglasAGI/Liquidation-Software.git
@@ -38,7 +62,7 @@ docker compose up -d
 
 Open **http://localhost:3000** → setup wizard. Postgres, migrations, photo storage: all handled; data persists in Docker volumes.
 
-### C) Bare metal (any Linux/macOS box with Node 18+ and PostgreSQL)
+### D) Bare metal (any Linux/macOS box with Node 18+ and PostgreSQL)
 
 ```bash
 git clone https://github.com/PaulDouglasAGI/Liquidation-Software.git

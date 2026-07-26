@@ -1,0 +1,37 @@
+{
+  "name": "Liquidation Ops",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+
+  // Runs once when the Codespace is created: installs deps and sets up the DB.
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  // Runs every time you (re)connect: starts the dev server in a visible terminal.
+  "postAttachCommand": "bash .devcontainer/start.sh",
+
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": {
+      "label": "Liquidation Ops",
+      // Pops the app open as soon as the server is listening.
+      "onAutoForward": "openPreview"
+    }
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "Prisma.prisma",
+        "dbaeumer.vscode-eslint",
+        "bradlc.vscode-tailwindcss",
+        "vitest.explorer"
+      ],
+      "settings": {
+        "editor.formatOnSave": false,
+        "typescript.tsdk": "node_modules/typescript/lib"
+      }
+    }
+  },
+
+  "remoteUser": "node"
+}

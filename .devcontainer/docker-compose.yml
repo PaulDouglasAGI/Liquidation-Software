@@ -1,0 +1,39 @@
+# Dev environment for Codespaces / VS Code "Reopen in Container".
+# Two containers: the editor+app container, and a real PostgreSQL alongside it.
+# (The docker-compose.yml in the repo root is the *production* one — it builds
+# the app image. This one keeps the source live-mounted for editing.)
+
+services:
+  app:
+    image: mcr.microsoft.com/devcontainers/typescript-node:1-22-bookworm
+    volumes:
+      # Mounts the parent of the repo at /workspaces, so the folder lands at
+      # /workspaces/<repo-name> — the layout Codespaces expects.
+      - ../..:/workspaces:cached
+    # Keeps the container alive; VS Code attaches and runs commands in it.
+    command: sleep infinity
+    environment:
+      # 'db' is the service name below — Compose resolves it on the shared network.
+      DATABASE_URL: postgresql://liqops:liqops@db:5432/liquidation
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: liqops
+      POSTGRES_PASSWORD: liqops
+      POSTGRES_DB: liquidation
+    volumes:
+      # Named volume, so your data survives container rebuilds.
+      - liqops-dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U liqops -d liquidation"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  liqops-dbdata:
