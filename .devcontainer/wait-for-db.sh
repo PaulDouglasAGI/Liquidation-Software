@@ -5,10 +5,26 @@
 set -e
 cd "$(dirname "$0")/.."
 
+# DATABASE_URL normally comes from the container environment, but fall back to
+# .env so the probe still targets the right host when run from a plain shell.
+if [ -z "$DATABASE_URL" ] && [ -f .env ]; then
+  DATABASE_URL="$(grep -s '^DATABASE_URL=' .env | head -1 | cut -d= -f2-)"
+fi
+export DATABASE_URL
+
 node -e '
 const net = require("net");
-const url = new URL(process.env.DATABASE_URL || "postgresql://liqops:liqops@db:5432/liquidation");
-const host = url.hostname, port = Number(url.port) || 5432;
+const raw = process.env.DATABASE_URL || "postgresql://liqops:liqops@db:5432/liquidation";
+let host = "db", port = 5432;
+try {
+  const url = new URL(raw);
+  // A "?host=/path" query means a Unix socket, which needs no TCP wait.
+  const sock = url.searchParams.get("host");
+  if (sock && sock.startsWith("/")) process.exit(0);
+  host = url.hostname || host;
+  port = Number(url.port) || 5432;
+} catch { /* keep the defaults */ }
+
 let tries = 0;
 (function attempt() {
   const sock = net.createConnection({ host, port });

@@ -22,6 +22,50 @@ hold_lock() {
 }
 release_lock() { exec 9>&- 2>/dev/null || true; }
 
+# Is the app actually SERVING on this port? Node rather than curl, because curl
+# is not guaranteed in every base image.
+#
+# A 5xx counts as NOT healthy on purpose. A server that boots but 500s on every
+# request (bad DATABASE_URL, unapplied migrations) would otherwise be reported
+# as "running" while the app is unusable.
+server_responding() {
+  local port="${1:-3000}"
+  node -e '
+    const http = require("http");
+    const req = http.get({ host: "127.0.0.1", port: process.argv[1], path: "/login", timeout: 3000 },
+      res => { res.resume(); process.exit(res.statusCode && res.statusCode < 500 ? 0 : 1); });
+    req.on("error", () => process.exit(1));
+    req.on("timeout", () => { req.destroy(); process.exit(1); });
+  ' "$port" 2>/dev/null
+}
+
+# Anything listening at all, healthy or not — distinguishes "no process" from
+# "process up but erroring", which need different advice.
+port_listening() {
+  local port="${1:-3000}"
+  node -e '
+    const net = require("net");
+    const s = net.createConnection({ host: "127.0.0.1", port: Number(process.argv[1]) });
+    s.setTimeout(2000);
+    s.on("connect", () => { s.end(); process.exit(0); });
+    s.on("timeout", () => { s.destroy(); process.exit(1); });
+    s.on("error", () => process.exit(1));
+  ' "$port" 2>/dev/null
+}
+
+# Guarantees DATABASE_URL is in the environment. Next loads .env itself, but
+# being explicit means the server can never boot without it — which surfaces
+# as "Environment variable not found: DATABASE_URL" and a 500 on every page.
+load_env() {
+  if [ -z "$DATABASE_URL" ] && [ -f .env ]; then
+    set -a
+    # shellcheck disable=SC1091
+    source .env
+    set +a
+  fi
+  export DATABASE_URL
+}
+
 # Is node_modules actually usable? A partial install leaves the directory
 # present but the binaries missing, which is why a failed install shows up
 # later as a mysterious 502 rather than an obvious error.

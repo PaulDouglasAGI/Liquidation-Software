@@ -13,6 +13,9 @@
     "db:studio": "prisma studio",
     "setup": "bash scripts/setup.sh",
     "repair": "bash .devcontainer/repair.sh",
+    "doctor": "bash .devcontainer/doctor.sh",
+    "stop": "bash .devcontainer/stop.sh",
+    "logs": "tail -n 200 -f /tmp/liqops-dev.log",
     "test": "vitest run"
   },
   "dependencies": {
