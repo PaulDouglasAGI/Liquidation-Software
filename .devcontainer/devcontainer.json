@@ -8,6 +8,11 @@
   "postCreateCommand": "bash .devcontainer/setup.sh",
   // Runs every time you (re)connect: starts the dev server in a visible terminal.
   "postAttachCommand": "bash .devcontainer/start.sh",
+  // Without this the UI attaches — and postAttachCommand fires — while
+  // postCreateCommand is still installing. The dev server then reads
+  // node_modules mid-install, npm's cleanup fails with ENOTEMPTY, and the
+  // install aborts half-built. Default is "updateContentCommand".
+  "waitFor": "postCreateCommand",
 
   "forwardPorts": [3000],
   "portsAttributes": {

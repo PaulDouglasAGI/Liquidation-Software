@@ -3,11 +3,12 @@
 # Installs dependencies and gets the database ready. Safe to re-run.
 set -e
 
-AMBER='\033[33m'; GREEN='\033[32m'; NC='\033[0m'
-say() { printf "${AMBER}[liqops]${NC} %s\n" "$1"; }
-ok()  { printf "${GREEN}[liqops]${NC} %s\n" "$1"; }
-
 cd "$(dirname "$0")/.."
+source .devcontainer/lib.sh
+
+# Held for the whole script: the dev server must not touch node_modules while
+# npm is rewriting it.
+hold_lock
 
 # The DB lives in the sibling 'db' container (see docker-compose.yml). The app
 # reads .env, so mirror the compose value into it.
@@ -24,7 +25,7 @@ fi
 mkdir -p uploads
 
 say "Installing dependencies…"
-npm install --no-fund --no-audit
+install_deps
 
 say "Generating the Prisma client…"
 npx prisma generate
@@ -35,6 +36,8 @@ bash .devcontainer/wait-for-db.sh
 
 say "Applying database migrations…"
 npx prisma migrate deploy
+
+release_lock
 
 echo
 ok "Ready. The dev server starts automatically — look for the popup, or open"

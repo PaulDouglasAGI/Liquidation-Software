@@ -12,6 +12,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
     "setup": "bash scripts/setup.sh",
+    "repair": "bash .devcontainer/repair.sh",
     "test": "vitest run"
   },
   "dependencies": {

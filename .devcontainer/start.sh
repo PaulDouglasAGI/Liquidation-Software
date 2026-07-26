@@ -4,12 +4,27 @@
 set -e
 
 cd "$(dirname "$0")/.."
+source .devcontainer/lib.sh
+
+# Blocks until setup.sh is done. Released before the server starts, so a later
+# setup run isn't stuck behind a server that never exits.
+hold_lock
+
+# A half-finished or interrupted install leaves node_modules present but
+# unusable; starting the server on it produces a 502 with no useful error.
+if ! deps_ok; then
+  warn "Dependencies are missing or incomplete — installing before starting."
+  install_deps
+  npx prisma generate >/dev/null 2>&1 || true
+fi
 
 # A rebuilt/resumed Codespace can attach before Postgres finishes booting.
 bash .devcontainer/wait-for-db.sh || true
 
 # Migrations may be newer than the volume if you pulled while stopped.
 npx prisma migrate deploy >/dev/null 2>&1 || true
+
+release_lock
 
 echo ""
 echo "  Liquidation Ops — starting the dev server"
