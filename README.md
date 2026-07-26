@@ -12,12 +12,19 @@ No config files or terminal accounts needed to get going: the **first visit in t
 
 ### A) GitHub Codespaces — nothing to install, runs in your browser
 
-The fastest way to try it. On the repo page: **Code ▸ Codespaces ▸ Create codespace on main**.
+The fastest way to try it. On the repo page: **Code ▸ Codespaces ▸ Create codespace**
+(pick the branch that contains `.devcontainer/`).
 
 VS Code opens in your browser and does the rest — installs Node and PostgreSQL,
-sets up the database, and starts the dev server. First build takes a couple of
-minutes; after that a popup offers to open the app (or use the **PORTS** tab and
-click the 🌐 globe next to port 3000).
+sets up the database, and starts the dev server. First build takes a few
+minutes; after that the app opens in a new browser tab (or use the **PORTS**
+tab and click the 🌐 globe next to port 3000).
+
+> Open it in a **real browser tab**, not VS Code's built-in preview pane. The
+> preview renders the app in a cross-site iframe, and browsers will not send a
+> `SameSite=Lax` session cookie into one — you would sign in and land straight
+> back on the login page. The globe icon in the PORTS tab always opens a proper
+> tab.
 
 The first visit walks you through creating your account. Everything you enter
 lives in the Codespace's own database and persists across stops and restarts.
@@ -25,6 +32,7 @@ lives in the Codespace's own database and persists across stops and restarts.
 ```bash
 npm run dev      # if you ever need to start the server by hand
 npm test         # run the test suite
+npm run repair   # if anything gets wedged: reinstalls deps, keeps your data
 ```
 
 > Codespaces is free for personal accounts up to a monthly quota, then billed by

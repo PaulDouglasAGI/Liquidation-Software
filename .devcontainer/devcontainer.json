@@ -18,8 +18,11 @@
   "portsAttributes": {
     "3000": {
       "label": "Liquidation Ops",
-      // Pops the app open as soon as the server is listening.
-      "onAutoForward": "openPreview"
+      // Opens a real browser tab, NOT VS Code's built-in preview. The preview
+      // renders the app in a cross-site iframe, where the SameSite=Lax session
+      // cookie is never sent back — you would sign in and be bounced straight
+      // to /login again. A normal tab is first-party, so auth works.
+      "onAutoForward": "openBrowser"
     }
   },
 
