@@ -7,11 +7,16 @@ import ScanFind from "@/components/ScanFind";
 const NAV = [
   { href: "/", label: "Dashboard", key: "D" },
   { href: "/intake", label: "Item Intake", key: "N" },
+  { href: "/ship", label: "Ship Today", key: "F" },
   { href: "/inventory", label: "Inventory", key: "I" },
   { href: "/pallets", label: "Pallets", key: "P" },
+  { href: "/counts", label: "Cycle Counts", key: "C" },
+  { href: "/lots", label: "Lots", key: "" },
+  { href: "/bid", label: "Bid Calculator", key: "B" },
   { href: "/insights", label: "Insights", key: "G" },
   { href: "/pnl", label: "P&L", key: "L" },
   { href: "/suppliers", label: "Suppliers", key: "U" },
+  { href: "/team", label: "Team", key: "" },
   { href: "/activity", label: "Activity", key: "" },
   { href: "/settings", label: "Settings", key: "" },
 ];

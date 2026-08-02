@@ -27,6 +27,7 @@ const CREDENTIAL_KEYS = new Set([
   "amazon.sellerId",
   "amazon.marketplaceId",
   "upc.apiKey",
+  "ai.anthropicKey",
 ]);
 
 /**

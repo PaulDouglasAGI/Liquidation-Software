@@ -6,6 +6,7 @@ import { EbayConfigError, getRecentOrders } from "@/lib/ebay";
 import { estimateFees } from "@/lib/fees";
 import { getFeeRates, getSetting, setSetting } from "@/lib/settings";
 import { recalcPalletStatus } from "@/lib/pallets";
+import { attachItemToExternalOrder } from "@/lib/orders";
 import { logActivity } from "@/lib/activity";
 
 const DEFAULT_LOOKBACK_DAYS = 30;
@@ -75,6 +76,9 @@ export async function POST(req: NextRequest) {
           platform: "EBAY",
         },
       });
+      // Create (or join) the fulfillment record so the sale lands in the
+      // Ship Today queue instead of only flipping a status.
+      await attachItemToExternalOrder(item.id, line.orderId, "EBAY", new Date(line.creationDate));
       await recalcPalletStatus(item.palletId);
       logActivity(actor, "item.sold", `${item.sku} sold on eBay (order ${line.orderId}) via sync`);
       updated++;

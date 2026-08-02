@@ -106,6 +106,13 @@ export default function SettingsClient({ numbers, fees, credStatus, templates, l
             onClear={clearSettings}
           />
           <CredsSection
+            title="AI intake (Anthropic)"
+            fields={[["ai.anthropicKey", "API key — enables 'Identify from photo' on the intake screen"]]}
+            credStatus={credStatus}
+            onSave={saveSettings}
+            onClear={clearSettings}
+          />
+          <CredsSection
             title="UPC lookup (upcitemdb.com)"
             fields={[["upc.apiKey", "API key (optional — trial endpoint used when empty)"]]}
             credStatus={credStatus}

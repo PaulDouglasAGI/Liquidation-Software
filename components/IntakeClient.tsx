@@ -5,6 +5,7 @@ import Link from "next/link";
 import { inputCls, selectCls, btnCls, btnPrimaryCls, labelCls, monoCls, panelCls } from "@/components/ui";
 import { CATEGORIES, CONDITIONS, label } from "@/lib/constants";
 import type { Html5Qrcode } from "html5-qrcode";
+import AiIdentify, { type AiSuggestion } from "@/components/AiIdentify";
 
 interface PalletOpt {
   id: string;
@@ -72,6 +73,12 @@ export default function IntakeClient({
   const [scanning, setScanning] = useState(false);
   const [looking, setLooking] = useState(false);
   const [lookupMsg, setLookupMsg] = useState("");
+  const [duplicate, setDuplicate] = useState<{
+    count: number; inStockCount: number; soldCount: number;
+    avgSoldPrice: number | null; lastSoldPrice: number | null;
+    template: { name: string; storageLocation: string | null };
+    recent: { id: string; sku: string; status: string; palletCode: string; storageLocation: string | null }[];
+  } | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [queued, setQueued] = useState(0);
@@ -221,6 +228,12 @@ export default function IntakeClient({
     setLooking(true);
     setLookupMsg("");
     try {
+      // Have we handled this exact product before? Our own history beats an
+      // external catalogue: it knows what the item actually sold for.
+      const dupRes = await fetch(`/api/items/duplicate?upc=${upc}`);
+      const dup = dupRes.ok ? await dupRes.json() : { found: false };
+      setDuplicate(dup.found ? dup : null);
+
       const res = await fetch(`/api/upc?code=${upc}`);
       const data = await res.json();
       if (res.ok && data.found) {
@@ -232,6 +245,17 @@ export default function IntakeClient({
           msrp: data.msrp ? String(data.msrp) : f.msrp,
         }));
         setLookupMsg(`Found: ${data.name ?? "product"}${data.msrp ? ` · MSRP $${data.msrp}` : ""}`);
+      } else if (dup.found) {
+        // No catalogue match, but we have taken this in before — use that.
+        setForm((f) => ({
+          ...f,
+          upc,
+          name: dup.template.name ?? f.name,
+          brand: dup.template.brand ?? f.brand,
+          category: dup.template.category ?? f.category,
+          msrp: dup.template.msrp ? String(dup.template.msrp) : f.msrp,
+        }));
+        setLookupMsg(`Matched your own history: ${dup.template.name}`);
       } else {
         setLookupMsg(data.error ? `Lookup failed: ${data.error}` : "No match — enter details manually");
         nameRef.current?.focus();
@@ -364,6 +388,66 @@ export default function IntakeClient({
           </button>
         </div>
         {lookupMsg ? <div className="mt-1.5 text-[12px] text-amber-300">{lookupMsg}</div> : null}
+
+        {/* We have taken this exact product in before — reuse what we learned
+            rather than re-keying it and re-guessing the price. */}
+        {duplicate ? (
+          <div className="mt-2 border border-accent/40 bg-accent/5 px-2 py-1.5 text-[12px]">
+            <div className="font-semibold text-accent">
+              Seen before — {duplicate.count} unit(s): {duplicate.inStockCount} on hand, {duplicate.soldCount} sold
+            </div>
+            {duplicate.avgSoldPrice !== null ? (
+              <div className="text-zinc-300">
+                Sold for an average of ${duplicate.avgSoldPrice.toFixed(2)}
+                {duplicate.lastSoldPrice !== null ? ` (last: $${duplicate.lastSoldPrice.toFixed(2)})` : ""}
+                <button
+                  type="button"
+                  className="ml-2 text-accent underline"
+                  onClick={() => setForm((f) => ({ ...f, sellPrice: String(duplicate.avgSoldPrice) }))}
+                >
+                  use that price
+                </button>
+              </div>
+            ) : null}
+            {duplicate.template.storageLocation ? (
+              <div className="text-muted">
+                Usually shelved at {duplicate.template.storageLocation}
+                <button
+                  type="button"
+                  className="ml-2 text-accent underline"
+                  onClick={() => setForm((f) => ({ ...f, storageLocation: duplicate.template.storageLocation ?? "" }))}
+                >
+                  use it
+                </button>
+              </div>
+            ) : null}
+            <div className="mt-0.5 text-muted">
+              {duplicate.recent.map((r) => (
+                <Link key={r.id} href={`/items/${r.id}`} className={`${monoCls} mr-2 text-accent hover:underline`}>
+                  {r.sku}
+                </Link>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {/* Photo → draft listing. Suggests; never overwrites without a tap. */}
+        <div className="mt-2">
+          <AiIdentify
+            upc={form.upc}
+            onApply={(s: AiSuggestion) =>
+              setForm((f) => ({
+                ...f,
+                name: s.name || f.name,
+                brand: s.brand ?? f.brand,
+                category: s.category || f.category,
+                condition: s.condition || f.condition,
+                conditionNotes: s.conditionNotes ?? f.conditionNotes,
+                msrp: s.msrp !== null ? String(s.msrp) : f.msrp,
+              }))
+            }
+          />
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3">

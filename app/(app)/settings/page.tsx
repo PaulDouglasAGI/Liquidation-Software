@@ -16,6 +16,7 @@ const CRED_KEYS = [
   "amazon.sellerId",
   "amazon.marketplaceId",
   "upc.apiKey",
+  "ai.anthropicKey",
 ] as const;
 
 const ENV_FALLBACKS: Record<string, string | undefined> = {
@@ -29,6 +30,7 @@ const ENV_FALLBACKS: Record<string, string | undefined> = {
   "amazon.sellerId": process.env.AMAZON_SELLER_ID,
   "amazon.marketplaceId": process.env.AMAZON_MARKETPLACE_ID,
   "upc.apiKey": process.env.UPC_API_KEY,
+  "ai.anthropicKey": process.env.ANTHROPIC_API_KEY,
 };
 
 export default async function SettingsPage() {
