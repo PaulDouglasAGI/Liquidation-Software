@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiUser } from "@/lib/api";
+import { isOwner } from "@/lib/auth";
 import { exchangeOAuthCode } from "@/lib/ebay";
 import { logActivity } from "@/lib/activity";
 
@@ -13,6 +14,12 @@ const STATE_COOKIE = "ebay_oauth_state";
 export async function GET(req: NextRequest) {
   const user = await apiUser();
   if (!user) return NextResponse.redirect(new URL("/login", req.nextUrl.origin));
+  // Owner-only: this stores the refresh token that can list and sell.
+  if (!isOwner(user)) {
+    const denied = new URL("/settings", req.nextUrl.origin);
+    denied.searchParams.set("ebayError", "Only an owner can connect the eBay account");
+    return NextResponse.redirect(denied);
+  }
 
   const url = new URL("/settings", req.nextUrl.origin);
   const res = () => {

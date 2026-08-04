@@ -20,7 +20,10 @@ export function parseCsv(text: string): string[][] {
       } else {
         field += c;
       }
-    } else if (c === '"') {
+    } else if (c === '"' && field === "") {
+      // Only a quote at the very start of a field opens a quoted section.
+      // Treating a mid-field quote (e.g. a 6" pipe) as an opener made the
+      // parser consume the remainder of the file into one giant field.
       inQuotes = true;
     } else if (c === ",") {
       row.push(field);

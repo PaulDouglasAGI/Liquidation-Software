@@ -11,7 +11,9 @@ export default async function TeamPage() {
   await requireUser();
 
   const since = new Date();
-  since.setDate(since.getDate() - WINDOW_DAYS);
+  // WINDOW_DAYS - 1: throughputByDay renders today plus the previous N-1
+  // days, so fetching N days made the headline totals exceed the bars.
+  since.setDate(since.getDate() - (WINDOW_DAYS - 1));
   since.setHours(0, 0, 0, 0);
 
   const logRows = await prisma.activityLog.findMany({

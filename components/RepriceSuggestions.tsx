@@ -15,13 +15,17 @@ export default function RepriceSuggestions({
   agingDays: number;
 }) {
   const router = useRouter();
-  const [checked, setChecked] = useState<Set<string>>(new Set(suggestions.map((s) => s.id)));
+  // Track only explicit DEselections. Everything else is selected by default,
+  // so when router.refresh() changes the suggestion list the button's count
+  // always matches what would actually be repriced — no resync needed.
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  const checked = new Set(suggestions.map((s) => s.id).filter((id) => !excluded.has(id)));
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
 
   function toggle(id: string) {
-    setChecked((c) => {
-      const next = new Set(c);
+    setExcluded((ex) => {
+      const next = new Set(ex);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;

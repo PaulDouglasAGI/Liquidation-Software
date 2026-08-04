@@ -65,9 +65,15 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!pallet) return notFound("Pallet not found");
     if (pallet.items.length === 0) return badRequest("Pallet has no items");
     const per = Math.round((pallet.totalCost.toNumber() / pallet.items.length) * 100) / 100;
-    await prisma.item.updateMany({ where: { palletId: id }, data: { ourCost: per } });
+    // SOLD items keep the cost they were booked at: rewriting it would change
+    // the margin on a closed period that has already been reported.
+    const { count } = await prisma.item.updateMany({
+      where: { palletId: id, status: { not: "SOLD" } },
+      data: { ourCost: per },
+    });
     await recalcPalletStatus(id);
-    return NextResponse.json({ ok: true, perItemCost: per });
+    const skipped = pallet.items.length - count;
+    return NextResponse.json({ ok: true, perItemCost: per, updated: count, skippedSold: skipped });
   } catch (e) {
     return serverError(e);
   }

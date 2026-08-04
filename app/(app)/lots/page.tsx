@@ -1,7 +1,8 @@
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { num } from "@/lib/serialize";
-import { getSettingNum } from "@/lib/settings";
+import { getSettingNum, getFeeRates } from "@/lib/settings";
+import { feeRateFor } from "@/lib/fees";
 import { getBundleCandidates } from "@/lib/lots";
 import LotsClient from "@/components/LotsClient";
 
@@ -9,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export default async function LotsPage() {
   await requireUser();
-  const agingDays = await getSettingNum("agingDays");
+  const [agingDays, feeRates] = await Promise.all([getSettingNum("agingDays"), getFeeRates()]);
   // Bundling is for stock that individual repricing has already failed to move.
   const staleThreshold = Math.max(agingDays * 2, 60);
 
@@ -25,6 +26,7 @@ export default async function LotsPage() {
   return (
     <LotsClient
       staleThreshold={staleThreshold}
+      feePct={feeRateFor("EBAY", feeRates)}
       candidates={candidates}
       lots={lots.map((l) => ({
         id: l.id,

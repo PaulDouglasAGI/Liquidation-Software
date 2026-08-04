@@ -11,7 +11,7 @@ export interface PalletItemCounts {
   anyItems: number;
   /** items excluding SCRAPPED — the ones that still represent work */
   total: number;
-  /** items that reached LISTED or SOLD */
+  /** items that reached LISTED, RESERVED (in a lot), or SOLD */
   listedOrBeyond: number;
 }
 

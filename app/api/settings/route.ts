@@ -2,33 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { apiUser, badRequest, forbidden, serverError, unauthorized } from "@/lib/api";
 import { isOwner } from "@/lib/auth";
+import { isCredentialKey, isKnownSettingKey } from "@/lib/credentials";
 
-/** Day-to-day operating knobs — any signed-in user may tune these. */
-const OPERATIONAL_KEYS = new Set([
-  "defaultPricePct",
-  "agingDays",
-  "lowMarginPct",
-  "fees.ebayPct",
-  "fees.amazonPct",
-  "fees.facebookPct",
-  "fees.otherPct",
-]);
 
-/** Marketplace API credentials — owner-only, they can move money and listings. */
-const CREDENTIAL_KEYS = new Set([
-  "ebay.appId",
-  "ebay.certId",
-  "ebay.devId",
-  "ebay.authToken",
-  "ebay.ruName",
-  "ebay.refreshToken",
-  "amazon.accessKey",
-  "amazon.secretKey",
-  "amazon.sellerId",
-  "amazon.marketplaceId",
-  "upc.apiKey",
-  "ai.anthropicKey",
-]);
 
 /**
  * POST { settings: { key: value, ... } } — upserts app settings.
@@ -48,12 +24,12 @@ export async function POST(req: NextRequest) {
 
     const entries = Object.entries(settings);
     for (const [key, value] of entries) {
-      if (!OPERATIONAL_KEYS.has(key) && !CREDENTIAL_KEYS.has(key)) {
+      if (!isKnownSettingKey(key)) {
         return badRequest(`Unknown setting: ${key}`);
       }
       if (typeof value !== "string") return badRequest(`Setting ${key} must be a string`);
     }
-    if (!isOwner(user) && entries.some(([key]) => CREDENTIAL_KEYS.has(key))) {
+    if (!isOwner(user) && entries.some(([key]) => isCredentialKey(key))) {
       return forbidden("Only an owner can change API credentials");
     }
 

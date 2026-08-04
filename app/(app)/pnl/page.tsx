@@ -32,7 +32,18 @@ export default async function PnlPage({
         <Stat label="Platform fees" value={money(report.totals.fees)} tone={report.totals.fees > 0 ? "danger" : undefined} />
         <Stat label="Shipping" value={money(report.totals.shipping)} tone={report.totals.shipping > 0 ? "danger" : undefined} />
         <Stat label="Expenses" value={money(report.expenseTotal)} tone={report.expenseTotal > 0 ? "danger" : undefined} />
-        <Stat label="Net profit" value={money(report.net)} sub={report.totals.netMarginPct !== null ? `net margin ${pct(report.totals.netMarginPct)}` : undefined} tone={report.net >= 0 ? "ok" : "danger"} />
+        {/* Margin must be computed on the SAME figure shown above it: report.net
+            is after expenses, while totals.netMarginPct is before them. */}
+        <Stat
+          label="Net profit"
+          value={money(report.net)}
+          sub={
+            report.totals.revenue > 0
+              ? `after expenses · ${pct((report.net / report.totals.revenue) * 100)} of revenue`
+              : undefined
+          }
+          tone={report.net >= 0 ? "ok" : "danger"}
+        />
       </div>
 
       <div className={panelCls}>

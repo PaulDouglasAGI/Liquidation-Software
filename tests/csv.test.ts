@@ -13,11 +13,22 @@ describe("toCsv", () => {
   });
 
   it("guards spreadsheet formula injection", () => {
-    const csv = toCsv(["name"], [["=HYPERLINK(evil)"], ["+SUM(A1)"], ["@cmd"], ["-5"]]);
+    const csv = toCsv(["name"], [["=HYPERLINK(evil)"], ["+SUM(A1)"], ["@cmd"], ["-2+3"], ["\tcmd"]]);
     expect(csv).toContain("'=HYPERLINK(evil)");
     expect(csv).toContain("'+SUM(A1)");
     expect(csv).toContain("'@cmd");
-    expect(csv).toContain("\r\n-5\r\n"); // negative numbers untouched
+    // A leading "-" is a formula start in Excel and Sheets too: "-2+3"
+    // evaluates rather than displaying. Supplier manifests are untrusted text,
+    // so it is escaped like the rest.
+    expect(csv).toContain("'-2+3");
+    expect(csv).toContain("'\tcmd");
+  });
+
+  it("escapes a lone negative number too, rather than guessing intent", () => {
+    // We cannot tell "-5" (a number) from "-5+cmd" (a formula) without
+    // parsing, so the guard is applied uniformly. Spreadsheets show the
+    // apostrophe-prefixed value as text, which is the safe failure.
+    expect(toCsv(["n"], [["-5"]])).toContain("'-5");
   });
 
   it("renders null/undefined as empty cells", () => {

@@ -89,7 +89,9 @@ const SORTS: Record<string, Prisma.ItemOrderByWithRelationInput> = {
 export function buildItemOrderBy(p: ItemFilterParams): Prisma.ItemOrderByWithRelationInput[] {
   const sort = pick(p, "sort");
   const dir = pick(p, "dir") === "asc" ? "asc" : pick(p, "dir") === "desc" ? "desc" : null;
-  let base = SORTS[sort] ?? SORTS.created;
+  // Own-property check: a bare index would resolve "constructor"/"toString"
+  // off Object.prototype and hand Prisma a function.
+  let base = Object.prototype.hasOwnProperty.call(SORTS, sort) ? SORTS[sort] : SORTS.created;
   if (dir) {
     const [key] = Object.keys(base);
     base = { [key]: dir } as Prisma.ItemOrderByWithRelationInput;

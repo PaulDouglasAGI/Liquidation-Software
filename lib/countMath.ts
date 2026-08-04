@@ -59,11 +59,17 @@ export function reconcileCount(
   for (const sku of scanned) {
     if (here.has(sku)) continue;
     const item = allBySku.get(sku);
-    if (item) {
-      misplaced.push({ sku, itemId: item.id, expectedLocation: item.storageLocation });
-    } else {
+    if (!item) {
       unknown.push(sku);
+      continue;
     }
+    // Its recorded shelf already IS this one — it is simply not "expected"
+    // because its status is off-shelf (e.g. SOLD, awaiting collection).
+    // Calling that misplaced buries the real misplacements in noise.
+    if ((item.storageLocation ?? "").trim().toUpperCase() === location.trim().toUpperCase()) {
+      continue;
+    }
+    misplaced.push({ sku, itemId: item.id, expectedLocation: item.storageLocation });
   }
 
   return {

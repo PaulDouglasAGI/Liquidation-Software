@@ -105,6 +105,51 @@ export function sortQueue<T extends { shipByDate: Date | null; soldAt: Date | nu
 /** The order is ready to advance once every line has been picked. */
 export const allPicked = (items: PickLine[]) => items.length > 0 && items.every((i) => i.picked);
 
+/**
+ * Splits an amount into `n` parts that sum EXACTLY to it.
+ *
+ * A plain divide-and-round loses or gains the remainder — $100 over 3 lines
+ * becomes 33.33 x 3 = $99.99 — so item-level money never reconciles to the
+ * order or lot total. The leftover cents are handed to the earliest parts.
+ */
+export function splitEvenly(total: number, n: number): number[] {
+  if (n <= 0) return [];
+  const cents = Math.round(total * 100);
+  const base = Math.trunc(cents / n);
+  let remainder = cents - base * n; // sign follows `cents`, so refunds work too
+  const step = remainder >= 0 ? 1 : -1;
+  return Array.from({ length: n }, () => {
+    let c = base;
+    if (remainder !== 0) { c += step; remainder -= step; }
+    return c / 100;
+  });
+}
+
+/**
+ * Splits an amount by weights, summing EXACTLY to the total. Zero total weight
+ * falls back to an even split so unpriced lines still receive their share
+ * instead of being booked at $0 revenue against full cost.
+ */
+export function splitByWeight(total: number, weights: number[]): number[] {
+  const sum = weights.reduce((a, w) => a + (w > 0 ? w : 0), 0);
+  if (sum <= 0) return splitEvenly(total, weights.length);
+  const cents = Math.round(total * 100);
+  const raw = weights.map((w) => ((w > 0 ? w : 0) / sum) * cents);
+  const floored = raw.map((r) => Math.floor(r));
+  let remainder = cents - floored.reduce((a, b) => a + b, 0);
+  // Give the spare cents to the largest fractional parts — standard largest-
+  // remainder allocation, so the rounding is not biased toward line order.
+  const order = raw
+    .map((r, i) => ({ i, frac: r - Math.floor(r) }))
+    .sort((a, b) => b.frac - a.frac);
+  for (const { i } of order) {
+    if (remainder <= 0) break;
+    floored[i] += 1;
+    remainder -= 1;
+  }
+  return floored.map((c) => c / 100);
+}
+
 /** Shipping margin on an order — what the buyer paid minus what postage cost. */
 export function shippingMargin(paid: number | null, cost: number | null): number | null {
   if (paid === null && cost === null) return null;

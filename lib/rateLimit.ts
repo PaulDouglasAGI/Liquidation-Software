@@ -47,14 +47,17 @@ export class RateLimiter {
   }
 
   /** Drops keys whose attempts have all aged out. */
+  /**
+   * Drops keys whose attempts have all aged out.
+   *
+   * Only expired keys are removed. Evicting *live* entries to stay under a cap
+   * would be a bypass: an attacker who can mint keys (one per made-up email)
+   * could flush a victim's lockout and resume guessing. Under a genuine flood
+   * the map is allowed to exceed maxKeys until entries expire on their own —
+   * bounded memory is not worth a hole in the lockout.
+   */
   private sweep(t: number) {
     for (const key of [...this.hits.keys()]) this.fresh(key, t);
-    // Still over budget after sweeping (a genuine flood): drop oldest-first so
-    // the limiter degrades instead of growing without bound.
-    if (this.hits.size > this.maxKeys) {
-      const excess = this.hits.size - this.maxKeys;
-      for (const key of [...this.hits.keys()].slice(0, excess)) this.hits.delete(key);
-    }
   }
 
   /** Whether a key is currently blocked, without recording an attempt. */
@@ -70,6 +73,8 @@ export class RateLimiter {
   /** Records an attempt and reports whether it is allowed. */
   check(key: string): RateLimitResult {
     const t = this.now();
+    // Sweep expired entries once the map grows past the soft cap. This never
+    // removes a live lockout, so it cannot be used to clear one.
     if (this.hits.size >= this.maxKeys) this.sweep(t);
     const kept = this.fresh(key, t);
 

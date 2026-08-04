@@ -29,7 +29,11 @@ export async function GET(req: NextRequest) {
     });
     if (items.length === 0) return NextResponse.json({ found: false, count: 0 });
 
-    const sold = items.filter((i) => i.status === "SOLD" && i.soldPrice);
+    // Order by when it SOLD, not when the row was created — intake order has
+    // nothing to do with which sale was most recent.
+    const sold = items
+      .filter((i) => i.status === "SOLD" && i.soldPrice)
+      .sort((a, b) => (b.dateSold?.getTime() ?? 0) - (a.dateSold?.getTime() ?? 0));
     const soldPrices = sold.map((i) => i.soldPrice!.toNumber());
     const inStock = items.filter((i) => i.status === "IN_STOCK" || i.status === "LISTED");
 

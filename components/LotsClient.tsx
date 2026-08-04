@@ -13,11 +13,11 @@ interface LotRow {
   askingPrice: number | null; soldPrice: number | null; itemCount: number; createdAt: string;
 }
 
-const EBAY_FEE = 13.25;
+
 
 export default function LotsClient({
-  candidates, lots, staleThreshold,
-}: { candidates: LotCandidate[]; lots: LotRow[]; staleThreshold: number }) {
+  candidates, lots, staleThreshold, feePct,
+}: { candidates: LotCandidate[]; lots: LotRow[]; staleThreshold: number; feePct: number }) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [name, setName] = useState("");
@@ -26,9 +26,15 @@ export default function LotsClient({
   const [msg, setMsg] = useState("");
 
   const chosen = useMemo(() => candidates.filter((c) => selected.has(c.id)), [candidates, selected]);
+  // A non-numeric discount must not silently become NaN pricing behind an
+  // enabled Create button — fall back to the automatic discount instead.
+  const discountNum = discount.trim() === "" ? undefined : Number(discount);
+  const discountValid = discountNum === undefined || (Number.isFinite(discountNum) && discountNum >= 0 && discountNum < 100);
   const pricing = useMemo(
-    () => priceLot(chosen, EBAY_FEE, discount ? Number(discount) : undefined),
-    [chosen, discount]
+    // feePct comes from Settings; hardcoding eBay's rate here let a lot be
+    // created below the break-even floor the server computes.
+    () => priceLot(chosen, feePct, discountValid ? discountNum : undefined),
+    [chosen, feePct, discountValid, discountNum]
   );
 
   function toggle(id: string) {
@@ -55,7 +61,7 @@ export default function LotsClient({
         itemIds: [...selected],
         name: name.trim() || undefined,
         askingPrice: pricing.suggestedPrice,
-        discountPct: discount ? Number(discount) : undefined,
+        discountPct: discountValid ? discountNum : undefined,
         platform: "EBAY",
       }),
     });
@@ -116,8 +122,13 @@ export default function LotsClient({
             <div>
               <label className={labelCls}>Discount % (auto {bundleDiscountPct(pricing.itemCount)})</label>
               <input className={inputNarrowCls + " w-24"} value={discount} onChange={(e) => setDiscount(e.target.value)} placeholder="auto" />
+              {discountValid ? null : <p className="mt-1 text-[11px] text-danger">Enter 0–99, or leave blank</p>}
             </div>
-            <button className={btnPrimaryCls} disabled={busy || selected.size < 2} onClick={() => void create()}>
+            <button
+              className={btnPrimaryCls}
+              disabled={busy || selected.size < 2 || !discountValid || !Number.isFinite(pricing.suggestedPrice)}
+              onClick={() => void create()}
+            >
               Create lot of {selected.size}
             </button>
             <button className={btnCls} onClick={() => { setSelected(new Set()); setName(""); }}>Clear</button>

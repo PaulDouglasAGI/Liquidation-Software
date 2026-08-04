@@ -106,7 +106,19 @@ export function estimateBid(
   feeRates: FeeRates,
   opts: Partial<BidAssumptions> = {}
 ): BidEstimate {
-  const a = { ...DEFAULT_ASSUMPTIONS, ...opts };
+  // Spreading opts directly lets an explicit null/NaN clobber a default and
+  // silently yield a $0 max bid; keep the default whenever a value is unusable.
+  const num = (v: unknown, fallback: number) => {
+    const n = typeof v === "number" ? v : parseFloat(String(v ?? ""));
+    return Number.isFinite(n) ? n : fallback;
+  };
+  const a: BidAssumptions = {
+    sellThroughPct: num(opts.sellThroughPct, DEFAULT_ASSUMPTIONS.sellThroughPct),
+    fallbackRecoveryPct: num(opts.fallbackRecoveryPct, DEFAULT_ASSUMPTIONS.fallbackRecoveryPct),
+    targetMarginPct: num(opts.targetMarginPct, DEFAULT_ASSUMPTIONS.targetMarginPct),
+    shippingPerUnit: num(opts.shippingPerUnit, DEFAULT_ASSUMPTIONS.shippingPerUnit),
+    platform: typeof opts.platform === "string" && opts.platform ? opts.platform : DEFAULT_ASSUMPTIONS.platform,
+  };
   const byCategory = new Map(history.byCategory.map((r) => [r.key, r]));
   const byBrand = new Map(history.byBrand.map((r) => [r.key, r]));
   const warnings: string[] = [];

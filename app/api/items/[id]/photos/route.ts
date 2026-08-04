@@ -35,7 +35,14 @@ export async function POST(req: NextRequest, { params }: Params) {
     const dir = path.join(uploadRoot(), "items", id);
     await mkdir(dir, { recursive: true });
 
-    const added: string[] = [];
+    // Validate every file first: writing as we go left earlier files orphaned
+  // on disk when a later one was rejected.
+  for (const f of files) {
+    if (!ALLOWED.has(f.type)) return badRequest(`Unsupported image type: ${f.type || "unknown"}`);
+    if (f.size > MAX_BYTES) return badRequest(`${f.name} is larger than the ${MAX_BYTES / 1_000_000}MB limit`);
+  }
+
+  const added: string[] = [];
     for (const file of files) {
       if (!ALLOWED.has(file.type)) return badRequest(`Unsupported file type: ${file.type}`);
       if (file.size > MAX_BYTES) return badRequest(`File too large (max ${MAX_BYTES / 1024 / 1024}MB)`);
@@ -47,9 +54,11 @@ export async function POST(req: NextRequest, { params }: Params) {
     const updated = await prisma.item.update({
       where: { id },
       data: { photos: { push: added } },
-      select: { photos: true },
+      // Return updatedAt so the editor can keep its optimistic-concurrency
+      // guard in sync; otherwise every save after a photo change 409s.
+      select: { photos: true, updatedAt: true },
     });
-    return NextResponse.json({ photos: updated.photos });
+    return NextResponse.json({ photos: updated.photos, updatedAt: updated.updatedAt });
   } catch (e) {
     return serverError(e);
   }
@@ -70,9 +79,11 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     const updated = await prisma.item.update({
       where: { id },
       data: { photos: item.photos.filter((p) => p !== photo) },
-      select: { photos: true },
+      // Return updatedAt so the editor can keep its optimistic-concurrency
+      // guard in sync; otherwise every save after a photo change 409s.
+      select: { photos: true, updatedAt: true },
     });
-    return NextResponse.json({ photos: updated.photos });
+    return NextResponse.json({ photos: updated.photos, updatedAt: updated.updatedAt });
   } catch (e) {
     return serverError(e);
   }

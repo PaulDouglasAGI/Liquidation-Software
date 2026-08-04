@@ -1,9 +1,10 @@
 function escapeCell(v: unknown, sep: string): string {
   if (v === null || v === undefined) return "";
   let s = String(v);
-  // Formula-injection guard for spreadsheet apps: a leading =, +, or @ in
-  // user-entered text (item names, notes) would execute when opened in Excel.
-  if (/^[=+@]/.test(s)) s = `'${s}`;
+  // Formula-injection guard for spreadsheet apps. A leading =, +, -, @, tab or
+  // CR in user-entered text (item names from a supplier manifest, notes) is
+  // treated as a formula by Excel and Sheets and would execute on open.
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   if (s.includes(sep) || s.includes('"') || s.includes("\n") || s.includes("\r")) {
     return `"${s.replace(/"/g, '""')}"`;
   }

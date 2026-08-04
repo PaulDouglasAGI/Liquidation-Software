@@ -24,7 +24,7 @@ export async function recalcPalletStatus(palletId: string, db: Db = prisma) {
 
   const [total, listedOrBeyond, anyItems] = await Promise.all([
     db.item.count({ where: { palletId, status: { not: "SCRAPPED" } } }),
-    db.item.count({ where: { palletId, status: { in: ["LISTED", "SOLD"] } } }),
+    db.item.count({ where: { palletId, status: { in: ["LISTED", "RESERVED", "SOLD"] } } }),
     db.item.count({ where: { palletId } }),
   ]);
 

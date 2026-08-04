@@ -50,6 +50,39 @@ function readQueue(): QueuedItem[] {
   }
 }
 
+/**
+ * Read-modify-write the queue in one step.
+ *
+ * save() and flushQueue() both mutate this key. Each previously read a
+ * snapshot, mutated it, and wrote it back, so a scan saved during a flush was
+ * silently erased by the flush's stale copy.
+ */
+function updateQueue(fn: (q: QueuedItem[]) => QueuedItem[]): QueuedItem[] {
+  const next = fn(readQueue());
+  localStorage.setItem(QUEUE_KEY, JSON.stringify(next));
+  return next;
+}
+
+const FLUSH_LOCK = "liq-intake-flush-lock";
+const LOCK_MS = 30_000;
+
+/** Cross-tab flush lock: a per-component ref only ever guarded one tab, so
+ *  two open /intake tabs created every queued item twice. */
+function acquireFlushLock(): boolean {
+  try {
+    const held = Number(localStorage.getItem(FLUSH_LOCK) ?? 0);
+    const now = Date.now();
+    if (held && now - held < LOCK_MS) return false; // another tab is flushing
+    localStorage.setItem(FLUSH_LOCK, String(now));
+    return true;
+  } catch {
+    return true; // storage unavailable — best effort
+  }
+}
+function releaseFlushLock() {
+  try { localStorage.removeItem(FLUSH_LOCK); } catch { /* ignore */ }
+}
+
 export default function IntakeClient({
   pallets,
   locations,
@@ -108,6 +141,7 @@ export default function IntakeClient({
     // Guard against concurrent flushes (mount + 'online' event + manual tap
     // can coincide) — without this every queued scan gets created twice.
     if (flushing.current) return;
+    if (!acquireFlushLock()) return; // another tab owns the flush
     flushing.current = true;
     try {
       // Pop one entry at a time and persist immediately, so an interrupted
@@ -129,10 +163,14 @@ export default function IntakeClient({
         } catch {
           break; // still offline — leave the queue as-is
         }
-        localStorage.setItem(QUEUE_KEY, JSON.stringify(rest));
+        // Drop by identity, not by index: a scan saved mid-flush may have
+        // appended to the queue since this iteration read it.
+        updateQueue((cur) => cur.filter((e) => e.queuedAt !== entry.queuedAt));
+        void rest;
       }
     } finally {
       flushing.current = false;
+      releaseFlushLock();
       setQueued(readQueue().length);
     }
   }, []);
@@ -317,9 +355,9 @@ export default function IntakeClient({
       if (autoScan) void startScan(); // straight into the next barcode
     } catch {
       // Offline: queue it (photos can't be queued)
-      const q = readQueue();
-      q.push({ payload, queuedAt: new Date().toISOString() });
-      localStorage.setItem(QUEUE_KEY, JSON.stringify(q));
+      // Unique key so a concurrent flush removes exactly this entry.
+      const queuedAt = `${new Date().toISOString()}-${Math.random().toString(36).slice(2, 8)}`;
+      const q = updateQueue((cur) => [...cur, { payload, queuedAt }]);
       setQueued(q.length);
       setSaveMsg({ ok: true, text: `Offline — item queued (${q.length} pending). Photos not queued.` });
       resetForNext();

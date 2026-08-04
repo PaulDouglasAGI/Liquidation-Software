@@ -13,6 +13,13 @@ import { num } from "./serialize";
  */
 export async function pushItemToEbay(item: Item, origin: string): Promise<{ itemId: string; url: string }> {
   if (item.status === "SOLD") throw new Error("Item is already sold");
+  if (item.status === "RESERVED") {
+    // Reserved means committed to a lot or held for a buyer; listing it
+    // individually is exactly the double-sale the reservation prevents.
+    throw new Error("Item is reserved (in a lot or on hold) — release it before listing");
+  }
+  if (item.status === "SCRAPPED") throw new Error("Item is scrapped and cannot be listed");
+  if (item.status === "RETURNED") throw new Error("Item was returned — relist it first to confirm its condition");
   const price = num(item.sellPrice);
   if (!price || price <= 0) throw new Error("Set a sell price before listing");
 

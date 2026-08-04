@@ -73,6 +73,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!session) return notFound("Count session not found");
     const b = await req.json().catch(() => null);
 
+    // Every mutating action needs the closed guard, not just scanning. A
+    // closed count reflects the shelf as it was; re-running its resolutions
+    // later would scrap or relocate stock that has since legitimately moved.
+    if (session.status === "CLOSED" && b?.action !== "close") {
+      return badRequest("This count is closed — start a new one for this shelf");
+    }
+
     if (b?.action === "close") {
       await prisma.countSession.update({ where: { id }, data: { status: "CLOSED", closedAt: new Date() } });
       const data = await loadReconciliation(id);
@@ -100,16 +107,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const data = await loadReconciliation(id);
       const ids = (data?.result.missing ?? []).map((m) => m.id);
       if (ids.length) {
-        await prisma.item.updateMany({
-          where: { id: { in: ids } },
-          data: { status: "SCRAPPED", notes: `Not found in count of ${session.location}` },
+        await prisma.$transaction(async (tx) => {
+          await tx.item.updateMany({ where: { id: { in: ids } }, data: { status: "SCRAPPED" } });
+          // Append the audit line instead of replacing whatever was there.
+          await tx.$executeRaw`
+            UPDATE "Item"
+            SET "notes" = COALESCE(NULLIF("notes", '') || E'\n', '') ||
+                          ${"Not found in count of " + session.location}
+            WHERE "id" = ANY(${ids})`;
         });
         logActivity(user.name, "count.writeoff", `${ids.length} item(s) written off from ${session.location}`);
       }
       return NextResponse.json({ ok: true, writtenOff: ids.length });
     }
-
-    if (session.status === "CLOSED") return badRequest("This count is closed");
 
     const sku = typeof b?.sku === "string" ? b.sku.trim().toUpperCase() : "";
     if (!sku) return badRequest("Scan a SKU");

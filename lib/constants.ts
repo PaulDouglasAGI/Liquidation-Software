@@ -21,11 +21,17 @@ export type ProductCategory = (typeof CATEGORIES)[number];
 export const CONDITIONS = ["NEW", "LIKE_NEW", "GOOD", "FAIR", "FOR_PARTS"] as const;
 export type ItemCondition = (typeof CONDITIONS)[number];
 
-export const ITEM_STATUSES = ["IN_STOCK", "LISTED", "SOLD", "RETURNED", "SCRAPPED"] as const;
+export const ITEM_STATUSES = ["IN_STOCK", "LISTED", "RESERVED", "SOLD", "RETURNED", "SCRAPPED"] as const;
 export type ItemStatus = (typeof ITEM_STATUSES)[number];
 
 export const PLATFORMS = ["EBAY", "AMAZON", "FACEBOOK", "OTHER"] as const;
 export type Platform = (typeof PLATFORMS)[number];
+
+export const ORDER_STATUSES = ["AWAITING_PICK", "PICKED", "PACKED", "SHIPPED", "CANCELLED"] as const;
+export type OrderStatusValue = (typeof ORDER_STATUSES)[number];
+
+export const LOT_STATUSES = ["DRAFT", "LISTED", "SOLD", "CANCELLED"] as const;
+export type LotStatusValue = (typeof LOT_STATUSES)[number];
 
 export const ROLES = ["OWNER", "STAFF"] as const;
 export type Role = (typeof ROLES)[number];
@@ -35,6 +41,13 @@ export const SUPPLIERS = ["Liquidation.com", "B-Stock", "Other"] as const;
 export const LABELS: Record<string, string> = {
   OWNER: "Owner",
   STAFF: "Staff",
+  RESERVED: "Reserved",
+  AWAITING_PICK: "Awaiting Pick",
+  PICKED: "Picked",
+  PACKED: "Packed",
+  SHIPPED: "Shipped",
+  CANCELLED: "Cancelled",
+  DRAFT: "Draft",
   RECEIVED: "Received",
   IN_PROCESSING: "In Processing",
   PARTIALLY_LISTED: "Partially Listed",

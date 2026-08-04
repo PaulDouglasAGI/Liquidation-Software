@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { panelCls, thCls, tdCls, monoCls, btnCls, btnPrimaryCls, inputNarrowCls, Stat } from "@/components/ui";
 import { money } from "@/lib/format";
 import { label } from "@/lib/constants";
-import { buildPickList, sortQueue, urgencyOf, type Urgency } from "@/lib/fulfillmentMath";
+import { allPicked, buildPickList, sortQueue, urgencyOf, type Urgency } from "@/lib/fulfillmentMath";
 
 interface OrderRow {
   id: string;
@@ -61,13 +61,16 @@ export default function ShipQueue({ orders, shippedToday }: { orders: OrderRow[]
           shipByDate: o.shipByDate ? new Date(o.shipByDate) : null,
           soldAt: o.soldAt ? new Date(o.soldAt) : null,
           buyerName: o.buyerName,
+          // picked:false for all — the list shows every line and tracks the
+          // tick separately, otherwise a ticked row vanishes and can never be
+          // un-ticked if it was checked by mistake.
           items: o.items.map((i) => ({
             itemId: i.id, sku: i.sku, name: i.name,
-            storageLocation: i.storageLocation, picked: picked.has(i.id),
+            storageLocation: i.storageLocation, picked: false,
           })),
         }))
       ),
-    [orders, picked]
+    [orders]
   );
 
   const lateCount = sorted.filter((o) => urgencyOf(o.shipByDate, now) === "late").length;
@@ -159,7 +162,11 @@ export default function ShipQueue({ orders, shippedToday }: { orders: OrderRow[]
       <div className="space-y-2">
         {sorted.map((o) => {
           const urgency = urgencyOf(o.shipByDate, now);
-          const allLinesPicked = o.items.every((i) => picked.has(i.id));
+          // allPicked() is false for an empty order; Array.every would be true.
+          const allLinesPicked = allPicked(o.items.map((i) => ({
+            itemId: i.id, sku: i.sku, name: i.name,
+            storageLocation: i.storageLocation, picked: picked.has(i.id),
+          })));
           return (
             <div key={o.id} className={panelCls}>
               <div className="flex flex-wrap items-center gap-2 border-b border-edge px-3 py-2">

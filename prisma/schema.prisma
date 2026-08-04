@@ -174,7 +174,9 @@ model Item {
 model Order {
   id             String      @id @default(cuid())
   orderNumber    String      @unique // internal, e.g. ORD-2026-001
-  externalId     String? // marketplace order id
+  /// Marketplace order id. Unique so a concurrent sync cannot create two
+  /// orders for the same marketplace order.
+  externalId     String?     @unique
   platform       Platform?
   buyerName      String?
   shipToName     String?
@@ -202,7 +204,6 @@ model Order {
   updatedAt      DateTime    @updatedAt
 
   @@index([status])
-  @@index([externalId])
 }
 
 /// Several slow-moving items sold together as one listing.

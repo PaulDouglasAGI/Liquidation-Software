@@ -68,12 +68,15 @@ export default function CountClient({ locations, sessions }: { locations: string
       body: JSON.stringify({ sku: sku.trim() }),
     });
     const data = await res.json().catch(() => ({}));
+    // Clear first, always. A scanner types straight into this box, so leaving
+    // a failed SKU behind makes the next scan concatenate into a bogus code
+    // and the item that was really on the shelf gets reported missing.
+    setScan("");
     if (!res.ok) { setMsg(data.error ?? "Scan failed"); return; }
     // Immediate feedback matters most when someone is holding a scanner.
     if (!data.known) setMsg(`${data.sku}: not in the system`);
     else if (!data.expectedHere) setMsg(`${data.sku}: expected at ${data.expectedLocation ?? "no location"}`);
     else setMsg(`${data.sku} ✓`);
-    setScan("");
     void refresh(activeId);
   }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { inputCls, inputNarrowCls, selectCls, selectNarrowCls, btnCls, btnPrimaryCls, btnDangerCls, labelCls, monoCls, panelCls } from "@/components/ui";
@@ -86,6 +86,11 @@ export default function ItemEditor({ item, locations, feeRates }: { item: ItemDa
   });
   const [photos, setPhotos] = useState(item.photos);
   const [busy, setBusy] = useState(false);
+  // Refs, not state: the save shortcut and the button must see the current
+  // values without re-registering listeners or racing a setState.
+  const busyRef = useRef(false);
+  const expectedUpdatedAt = useRef(item.updatedAt);
+  const saveRef = useRef<() => Promise<void>>(async () => {});
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [market, setMarket] = useState<MarketResult | null>(null);
   const [marketMsg, setMarketMsg] = useState("");
@@ -108,20 +113,42 @@ export default function ItemEditor({ item, locations, feeRates }: { item: ItemDa
     : null;
 
   async function save() {
-    if (busy) return;
+    if (busyRef.current) return; // ref, not state — a shortcut can fire twice
+    busyRef.current = true;
     setBusy(true);
     setMsg(null);
-    const res = await fetch(`/api/items/${item.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      // expectedUpdatedAt: refuse to overwrite changes made elsewhere
-      body: JSON.stringify({ ...form, expectedUpdatedAt: item.updatedAt }),
-    });
-    const data = await res.json().catch(() => ({}));
-    setBusy(false);
-    setMsg(res.ok ? { ok: true, text: "Saved" } : { ok: false, text: data.error ?? "Save failed" });
-    if (res.ok) router.refresh();
+    try {
+      const res = await fetch(`/api/items/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        // expectedUpdatedAt: refuse to overwrite changes made elsewhere.
+        // Uses the locally tracked value so a photo upload (which bumps
+        // updatedAt server-side) doesn't make every later save a false 409.
+        body: JSON.stringify({ ...form, expectedUpdatedAt: expectedUpdatedAt.current }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        if (typeof data.updatedAt === "string") expectedUpdatedAt.current = data.updatedAt;
+        setMsg({ ok: true, text: "Saved" });
+        router.refresh();
+      } else {
+        setMsg({ ok: false, text: data.error ?? "Save failed" });
+      }
+    } catch {
+      // Without this, a dropped connection left busy=true forever and every
+      // control on the page stayed disabled with no explanation.
+      setMsg({ ok: false, text: "Could not reach the server — check your connection and try again" });
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
   }
+
+  // Keep the shortcut pointed at the latest save without re-registering the
+  // listener on every keystroke. Assigned in an effect, not during render.
+  useEffect(() => {
+    saveRef.current = save;
+  });
 
   // S = save shortcut
   useEffect(() => {
@@ -131,12 +158,14 @@ export default function ItemEditor({ item, locations, feeRates }: { item: ItemDa
       if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT") return;
       if (e.key.toLowerCase() === "s") {
         e.preventDefault();
-        void save();
+        void saveRef.current();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [form]); // eslint-disable-line react-hooks/exhaustive-deps
+    // saveRef keeps this bound to the latest save() without re-registering on
+    // every keystroke, so the shortcut can't fire a stale closure.
+  }, []);
 
   async function remove() {
     if (!confirm(`Delete ${item.sku}? This cannot be undone.`)) return;
@@ -221,17 +250,31 @@ export default function ItemEditor({ item, locations, feeRates }: { item: ItemDa
     if (!files || files.length === 0) return;
     const fd = new FormData();
     Array.from(files).slice(0, 8).forEach((f) => fd.append("photos", f));
-    const res = await fetch(`/api/items/${item.id}/photos`, { method: "POST", body: fd });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok) setPhotos(data.photos);
-    else setMsg({ ok: false, text: data.error ?? "Upload failed" });
+    try {
+      const res = await fetch(`/api/items/${item.id}/photos`, { method: "POST", body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setPhotos(data.photos);
+        // The row's updatedAt just moved; adopt it or the next Save 409s.
+        if (typeof data.updatedAt === "string") expectedUpdatedAt.current = data.updatedAt;
+      } else setMsg({ ok: false, text: data.error ?? "Upload failed" });
+    } catch {
+      setMsg({ ok: false, text: "Photo upload failed — check your connection" });
+    }
   }
 
   async function deletePhoto(p: string) {
     if (!confirm("Delete this photo?")) return;
-    const res = await fetch(`/api/items/${item.id}/photos?photo=${encodeURIComponent(p)}`, { method: "DELETE" });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok) setPhotos(data.photos);
+    try {
+      const res = await fetch(`/api/items/${item.id}/photos?photo=${encodeURIComponent(p)}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setPhotos(data.photos);
+        if (typeof data.updatedAt === "string") expectedUpdatedAt.current = data.updatedAt;
+      } else setMsg({ ok: false, text: data.error ?? "Delete failed" });
+    } catch {
+      setMsg({ ok: false, text: "Could not delete the photo — check your connection" });
+    }
   }
 
   return (

@@ -141,12 +141,13 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       }
     }
 
-    await prisma.item.update({ where: { id }, data });
+    const saved = await prisma.item.update({ where: { id }, data, select: { updatedAt: true } });
     await recalcPalletStatus(existing.palletId);
     if (data.status && data.status !== existing.status) {
       logActivity(user.name, "item.status", `${existing.sku}: ${existing.status} → ${data.status}`);
     }
-    return NextResponse.json({ ok: true });
+    // The editor adopts this for its next optimistic-concurrency check.
+    return NextResponse.json({ ok: true, updatedAt: saved.updatedAt });
   } catch (e) {
     return serverError(e);
   }

@@ -88,10 +88,28 @@ describe("RateLimiter", () => {
     expect(rl.size).toBe(0);
   });
 
-  it("caps tracked keys under a flood of unique callers", () => {
-    const { rl } = makeLimiter(5, 60_000, 10);
-    for (let i = 0; i < 200; i++) rl.check(`ip-${i}`);
-    expect(rl.size).toBeLessThanOrEqual(11);
+  it("a flood of unique keys cannot clear an existing lockout", () => {
+    // Security property: evicting live entries to cap memory would let an
+    // attacker flush a victim's lockout by minting keys (one per made-up
+    // email) and then resume guessing. Locked keys must survive the flood.
+    const { rl } = makeLimiter(2, 60_000, 10);
+    rl.check("victim@shop.com");
+    rl.check("victim@shop.com");
+    expect(rl.check("victim@shop.com").allowed).toBe(false);
+
+    for (let i = 0; i < 500; i++) rl.check(`attacker-${i}@spam.test`);
+
+    expect(rl.check("victim@shop.com").allowed).toBe(false);
+  });
+
+  it("still reclaims keys once their attempts age out", () => {
+    const { rl, advance } = makeLimiter(2, 1000, 10);
+    for (let i = 0; i < 50; i++) rl.check(`k${i}`);
+    expect(rl.size).toBe(50);
+    advance(1001);
+    rl.check("trigger-sweep");
+    // Everything expired, so the map collapses back down on its own.
+    expect(rl.size).toBeLessThanOrEqual(1);
   });
 });
 
