@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { apiUser, badRequest, notFound, parseDate, parseMoney, serverError, unauthorized } from "@/lib/api";
-import { CATEGORIES, PALLET_STATUSES } from "@/lib/constants";
+import { apiUser, badRequest, notFound, parseCount, parseDate, parseMoney, serverError, unauthorized } from "@/lib/api";
+import { CATEGORIES, CONDITION_GRADES, PALLET_STATUSES } from "@/lib/constants";
 import { recalcPalletStatus } from "@/lib/pallets";
 import { checkPalletDeletion } from "@/lib/palletStatus";
 import { logActivity } from "@/lib/activity";
@@ -33,6 +33,36 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (b.category !== undefined && CATEGORIES.includes(b.category)) data.category = b.category;
     if (b.status !== undefined && PALLET_STATUSES.includes(b.status)) data.status = b.status;
     if (b.notes !== undefined) data.notes = b.notes?.trim() || null;
+
+    // ── Lot performance fields ──────────────────────────────────────────
+    if (b.sourceLotId !== undefined) data.sourceLotId = b.sourceLotId?.trim() || null;
+    if (b.conditionGrade !== undefined && CONDITION_GRADES.includes(b.conditionGrade)) {
+      data.conditionGrade = b.conditionGrade;
+    }
+    if (b.fees !== undefined) {
+      const f = parseMoney(b.fees);
+      if (f === null) return badRequest("Invalid fees");
+      data.fees = f;
+    }
+    if (b.manifestUnitCount !== undefined) data.manifestUnitCount = parseCount(b.manifestUnitCount);
+    if (b.actualUnitCount !== undefined) data.actualUnitCount = parseCount(b.actualUnitCount);
+    if (b.manifestRetailTotal !== undefined) data.manifestRetailTotal = parseMoney(b.manifestRetailTotal);
+    if (b.preBidEstimatedRecovery !== undefined) {
+      data.preBidEstimatedRecovery = parseMoney(b.preBidEstimatedRecovery);
+    }
+    if (b.pickupDate !== undefined) {
+      // Clearing it is allowed; the metrics then fall back to purchaseDate.
+      data.pickupDate = b.pickupDate ? parseDate(b.pickupDate) : null;
+      if (b.pickupDate && !data.pickupDate) return badRequest("Invalid pickup date");
+    }
+
+    // Fees are part of totalCost, never on top of it, so the pair must stay
+    // consistent even when only one of them is being edited.
+    const nextCost = (data.totalCost as number | undefined) ?? existing.totalCost.toNumber();
+    const nextFees = (data.fees as number | undefined) ?? existing.fees.toNumber();
+    if (nextFees > nextCost) {
+      return badRequest("Fees cannot exceed the total cost — total cost is the all-in figure");
+    }
 
     await prisma.pallet.update({ where: { id }, data });
     return NextResponse.json({ ok: true });

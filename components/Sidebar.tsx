@@ -11,7 +11,10 @@ const NAV = [
   { href: "/inventory", label: "Inventory", key: "I" },
   { href: "/pallets", label: "Pallets", key: "P" },
   { href: "/counts", label: "Cycle Counts", key: "C" },
-  { href: "/lots", label: "Lots", key: "" },
+  // "Bundles", not "Lots": a lot here is a pallet bought at auction, and two
+  // things called Lots in one sidebar is how people click the wrong one.
+  { href: "/lots", label: "Bundles", key: "" },
+  { href: "/performance", label: "Lot Performance", key: "R" },
   { href: "/bid", label: "Bid Calculator", key: "B" },
   { href: "/insights", label: "Insights", key: "G" },
   { href: "/pnl", label: "P&L", key: "L" },

@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 /**
  * Global keyboard shortcuts (desktop power users):
  *   N = new item (intake), I = inventory, P = pallets, D = dashboard,
- *   L = P&L, U = suppliers, / = focus search
+ *   L = P&L, U = suppliers, G = insights, R = lot performance, / = focus search
  * Ignored while typing in an input/textarea/select.
  */
 export default function Shortcuts() {
@@ -34,6 +34,7 @@ export default function Shortcuts() {
         i: "/inventory",
         p: "/pallets",
         g: "/insights",
+        r: "/performance",
         d: "/",
         l: "/pnl",
         u: "/suppliers",

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { apiUser, badRequest, notFound, parseDate, parseMoney, serverError, unauthorized } from "@/lib/api";
 import { recalcPalletStatus } from "@/lib/pallets";
-import { CATEGORIES, CONDITIONS, ITEM_STATUSES, PLATFORMS } from "@/lib/constants";
+import { CATEGORIES, CONDITIONS, DUD_REASONS, ITEM_STATUSES, PLATFORMS, VALUE_CLASSES } from "@/lib/constants";
 import { toPlain } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity";
 import { estimateFees } from "@/lib/fees";
@@ -84,6 +84,20 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       const c = parseMoney(b.ourCost);
       if (c === null) return badRequest("Invalid cost — enter a non-negative number");
       data.ourCost = c;
+    }
+    // Lot-performance tagging. valueClass separates stock we can bid against
+    // from stock that is upside; isDud feeds the attrition rate.
+    if (b.valueClass !== undefined) {
+      data.valueClass = VALUE_CLASSES.includes(b.valueClass) ? b.valueClass : null;
+    }
+    if (b.isDud !== undefined) {
+      data.isDud = b.isDud === true || b.isDud === "true";
+      // Untagging a dud must not leave the old reason behind, or the reason
+      // breakdown keeps counting a unit the dud rate no longer counts.
+      if (!data.isDud) data.dudReason = null;
+    }
+    if (b.dudReason !== undefined && data.dudReason === undefined) {
+      data.dudReason = DUD_REASONS.includes(b.dudReason) ? b.dudReason : null;
     }
     if (b.serialNumber !== undefined) data.serialNumber = strOrNull(b.serialNumber);
     if (b.returnReason !== undefined) data.returnReason = strOrNull(b.returnReason);

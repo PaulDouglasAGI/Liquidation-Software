@@ -15,13 +15,14 @@ enum Role {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
+  id           String       @id @default(cuid())
+  email        String       @unique
   name         String
   passwordHash String
-  role         Role      @default(STAFF)
-  createdAt    DateTime  @default(now())
+  role         Role         @default(STAFF)
+  createdAt    DateTime     @default(now())
   sessions     Session[]
+  laborEntries LaborEntry[]
 }
 
 model Session {
@@ -36,6 +37,10 @@ model Session {
 }
 
 enum PalletStatus {
+  /// Watching the auction; no money committed yet.
+  BIDDING
+  /// Auction won, not yet collected.
+  WON
   RECEIVED
   IN_PROCESSING
   PARTIALLY_LISTED
@@ -47,23 +52,111 @@ enum ProductCategory {
   POWER_TOOLS
   HAND_TOOLS
   HARDWARE
+  ELECTRICAL_LIGHTING
+  PLUMBING
+  GENERAL_HOME
   APPLIANCES
   MIXED
 }
 
+/// How the seller graded the lot. The single strongest predictor of dud rate,
+/// so it is the axis the aggregate view groups profit-per-hour by.
+enum ConditionGrade {
+  NEW
+  SHELF_PULL
+  OVERSTOCK
+  CUSTOMER_RETURNS
+  SALVAGE
+  MIXED
+}
+
+/// A lot bought at auction: the unit of purchase, and the unit P&L lives at.
+///
+/// Cost stays here and is never allocated down to individual units — manifest
+/// retail is demonstrably unreliable, so any per-unit split would be fiction.
+/// See lib/lotPerformanceMath.ts.
 model Pallet {
-  id           String          @id @default(cuid())
-  palletCode   String          @unique // PAL-2026-001
-  supplier     String // Liquidation.com / B-Stock / Other
-  purchaseDate DateTime
-  totalCost    Decimal         @db.Decimal(12, 2)
-  manifestUrl  String?
-  category     ProductCategory @default(MIXED)
-  status       PalletStatus    @default(RECEIVED)
-  notes        String?
-  items        Item[]
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  id                      String          @id @default(cuid())
+  palletCode              String          @unique // PAL-2026-001
+  supplier                String // Liquidation.com / B-Stock / Other
+  /// The seller's own manifest or auction id, for matching back to their site.
+  sourceLotId             String?
+  purchaseDate            DateTime
+  /// All-in cost: hammer price plus buyer's premium, tax and any other fees.
+  /// Every existing screen reads this, so it stays the authoritative total;
+  /// `fees` is the breakdown, and the purchase price is totalCost − fees.
+  totalCost               Decimal         @db.Decimal(12, 2)
+  /// Buyer's premium, tax, and anything else on top of the hammer price.
+  fees                    Decimal         @default(0) @db.Decimal(12, 2)
+  manifestUrl             String?
+  category                ProductCategory @default(MIXED)
+  conditionGrade          ConditionGrade  @default(MIXED)
+  /// Units the manifest promised vs units that actually turned up. They differ.
+  manifestUnitCount       Int?
+  actualUnitCount         Int?
+  /// Sum of the manifest's retail column. Context only — explicitly NOT a
+  /// valuation, and never used to price or allocate anything.
+  manifestRetailTotal     Decimal?        @db.Decimal(12, 2)
+  /// What we predicted we would recover, recorded BEFORE bidding. Drives the
+  /// estimate-accuracy metric that calibrates our max bids.
+  preBidEstimatedRecovery Decimal?        @db.Decimal(12, 2)
+  /// When the lot physically arrived. The clock every timing metric runs from.
+  pickupDate              DateTime?
+  status                  PalletStatus    @default(RECEIVED)
+  notes                   String?
+  items                   Item[]
+  labor                   LaborEntry[]
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+}
+
+/// What kind of work an hour went into.
+enum LaborActivity {
+  PICKUP_TRANSPORT
+  TESTING_SORTING
+  PHOTOGRAPHING_LISTING
+  PACKING_SHIPPING
+  OTHER
+}
+
+/// One work session against one lot. The missing input for every labor-derived
+/// metric — without these rows profit-per-hour cannot be computed at all.
+model LaborEntry {
+  id        String        @id @default(cuid())
+  palletId  String
+  pallet    Pallet        @relation(fields: [palletId], references: [id], onDelete: Cascade)
+  /// Who did the work. Nulled if the account is deleted; userName survives so
+  /// the history stays attributable.
+  userId    String?
+  user      User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userName  String
+  date      DateTime
+  hours     Decimal       @db.Decimal(6, 2)
+  activity  LaborActivity @default(TESTING_SORTING)
+  notes     String?
+  createdAt DateTime      @default(now())
+
+  @@index([palletId])
+  @@index([userId])
+  @@index([date])
+}
+
+/// Whether a unit is stock we can count on or a gamble.
+/// Floor units (copper, panels, smoke detectors, brand-name cordless) are what
+/// we should actually bid against; speculative units are upside, not budget.
+enum ValueClass {
+  FLOOR
+  SPECULATIVE
+}
+
+/// Why a unit is worth nothing. Calibrates the attrition assumption in bidding.
+enum DudReason {
+  NON_FUNCTIONAL
+  MISSING_PARTS
+  MISSING_BATTERY
+  DAMAGED
+  NOT_AS_MANIFESTED
+  OTHER
 }
 
 enum ItemCondition {
@@ -155,6 +248,12 @@ model Item {
   lotId           String?
   lot             Lot?            @relation(fields: [lotId], references: [id], onDelete: SetNull)
   /// Local-buyer hold: who it is held for and until when.
+  /// Reliable seller or a gamble. Tagged by hand at intake; null until judged.
+  valueClass      ValueClass?
+  /// Arrived dead. Excluded from sell-through denominators, counted in dud rate.
+  isDud           Boolean         @default(false)
+  dudReason       DudReason?
+  /// Local-buyer hold: who it is held for and until when.
   reservedFor     String?
   reservedUntil   DateTime?
   notes           String?
@@ -163,6 +262,7 @@ model Item {
 
   @@index([palletId])
   @@index([status])
+  @@index([isDud])
   @@index([upc])
   @@index([storageLocation])
   @@index([orderRecordId])
@@ -278,15 +378,15 @@ model Expense {
 }
 
 model SupplierPurchase {
-  id           String   @id @default(cuid())
-  supplierName String
-  purchaseDate DateTime
-  manifestId   String?
-  category     String?
-  palletsBought Int     @default(1)
-  totalPaid    Decimal  @db.Decimal(12, 2)
-  notes        String?
-  createdAt    DateTime @default(now())
+  id            String   @id @default(cuid())
+  supplierName  String
+  purchaseDate  DateTime
+  manifestId    String?
+  category      String?
+  palletsBought Int      @default(1)
+  totalPaid     Decimal  @db.Decimal(12, 2)
+  notes         String?
+  createdAt     DateTime @default(now())
 }
 
 // Key-value app settings: defaultPricePct, agingDays, API credentials, etc.

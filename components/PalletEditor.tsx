@@ -3,20 +3,30 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { inputCls, selectCls, btnCls, btnPrimaryCls, btnDangerCls, labelCls } from "@/components/ui";
-import { CATEGORIES, PALLET_STATUSES, label } from "@/lib/constants";
+import { CATEGORIES, CONDITION_GRADES, PALLET_STATUSES, label } from "@/lib/constants";
 
 interface PalletData {
   id: string;
   palletCode: string;
   supplier: string;
+  sourceLotId: string | null;
   purchaseDate: string;
+  pickupDate: string | null;
   totalCost: number;
+  fees: number;
   manifestUrl: string | null;
   category: string;
+  conditionGrade: string;
+  manifestUnitCount: number | null;
+  actualUnitCount: number | null;
+  manifestRetailTotal: number | null;
+  preBidEstimatedRecovery: number | null;
   status: string;
   notes: string | null;
   itemCount: number;
 }
+
+const numStr = (n: number | null) => (n === null || n === undefined ? "" : String(n));
 
 export default function PalletEditor({ pallet }: { pallet: PalletData }) {
   const router = useRouter();
@@ -24,10 +34,18 @@ export default function PalletEditor({ pallet }: { pallet: PalletData }) {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [form, setForm] = useState({
     supplier: pallet.supplier,
+    sourceLotId: pallet.sourceLotId ?? "",
     purchaseDate: pallet.purchaseDate.slice(0, 10),
+    pickupDate: pallet.pickupDate?.slice(0, 10) ?? "",
     totalCost: String(pallet.totalCost),
+    fees: String(pallet.fees),
     manifestUrl: pallet.manifestUrl ?? "",
     category: pallet.category,
+    conditionGrade: pallet.conditionGrade,
+    manifestUnitCount: numStr(pallet.manifestUnitCount),
+    actualUnitCount: numStr(pallet.actualUnitCount),
+    manifestRetailTotal: numStr(pallet.manifestRetailTotal),
+    preBidEstimatedRecovery: numStr(pallet.preBidEstimatedRecovery),
     status: pallet.status,
     notes: pallet.notes ?? "",
   });
@@ -130,12 +148,58 @@ export default function PalletEditor({ pallet }: { pallet: PalletData }) {
           </select>
         </div>
         <div>
+          <label className={labelCls}>Fees (premium, tax)</label>
+          <input type="number" step="0.01" min="0" className={inputCls + " font-mono"} value={form.fees} onChange={set("fees")} />
+        </div>
+        <div>
+          <label className={labelCls}>Condition grade</label>
+          <select className={selectCls} value={form.conditionGrade} onChange={set("conditionGrade")}>
+            {CONDITION_GRADES.map((c) => <option key={c} value={c}>{label(c)}</option>)}
+          </select>
+        </div>
+        <div>
           <label className={labelCls}>Status</label>
           <select className={selectCls} value={form.status} onChange={set("status")}>
             {PALLET_STATUSES.map((s) => <option key={s} value={s}>{label(s)}</option>)}
           </select>
         </div>
-        <div className="col-span-2 md:col-span-3">
+        <div>
+          <label className={labelCls}>Pickup date</label>
+          <input
+            type="date" className={inputCls} value={form.pickupDate} onChange={set("pickupDate")}
+            title="When the lot physically arrived. Every timing metric runs from this."
+          />
+        </div>
+        <div>
+          <label className={labelCls}>Seller&apos;s lot ID</label>
+          <input className={inputCls + " font-mono"} value={form.sourceLotId} onChange={set("sourceLotId")} />
+        </div>
+
+        <div className="col-span-2 md:col-span-4 border-t border-edge pt-2 text-[11px] text-muted">
+          Lot Performance — the pre-bid estimate is what scores your bidding. Fill it in even
+          retrospectively and the lot starts appearing in estimate accuracy.
+        </div>
+        <div>
+          <label className={labelCls}>Est. recovery (pre-bid)</label>
+          <input type="number" step="0.01" min="0" className={inputCls + " font-mono"} value={form.preBidEstimatedRecovery} onChange={set("preBidEstimatedRecovery")} />
+        </div>
+        <div>
+          <label className={labelCls}>Manifest units</label>
+          <input type="number" step="1" min="0" className={inputCls + " font-mono"} value={form.manifestUnitCount} onChange={set("manifestUnitCount")} />
+        </div>
+        <div>
+          <label className={labelCls}>Actual units</label>
+          <input type="number" step="1" min="0" className={inputCls + " font-mono"} value={form.actualUnitCount} onChange={set("actualUnitCount")} />
+        </div>
+        <div>
+          <label className={labelCls}>Manifest retail total</label>
+          <input
+            type="number" step="0.01" min="0" className={inputCls + " font-mono"}
+            value={form.manifestRetailTotal} onChange={set("manifestRetailTotal")}
+            title="Reference only. Never used to price or value anything."
+          />
+        </div>
+        <div className="col-span-2 md:col-span-4">
           <label className={labelCls}>Manifest URL</label>
           <input className={inputCls} value={form.manifestUrl} onChange={set("manifestUrl")} placeholder="https://…" />
         </div>
@@ -146,7 +210,16 @@ export default function PalletEditor({ pallet }: { pallet: PalletData }) {
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <button type="submit" disabled={busy} className={btnPrimaryCls}>Save</button>
-        <button type="button" disabled={busy || pallet.itemCount === 0} className={btnCls} onClick={allocate} title="Spread pallet cost evenly across all items">
+        <button
+          type="button"
+          disabled={busy || pallet.itemCount === 0}
+          className={btnCls}
+          onClick={allocate}
+          title={
+            "Spreads pallet cost evenly across items, for the per-item P&L and margin views only. " +
+            "Lot Performance ignores it entirely and always measures profit against the whole lot cost."
+          }
+        >
           Reallocate cost / item
         </button>
         <button

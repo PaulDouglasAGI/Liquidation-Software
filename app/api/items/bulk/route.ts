@@ -7,6 +7,7 @@ import { estimateFees } from "@/lib/fees";
 import { getFeeRates } from "@/lib/settings";
 import { nextOrderNumber } from "@/lib/orders";
 import { shipByFrom } from "@/lib/fulfillmentMath";
+import { DUD_REASONS, VALUE_CLASSES } from "@/lib/constants";
 
 /** Thrown to abort the transaction with a 400 rather than a 500. */
 class BadAction extends Error {}
@@ -47,7 +48,11 @@ export async function POST(req: NextRequest) {
       // sold, relisted, or scrapped individually — doing so would silently
       // overwrite the lot's settlement or strand a buyer's order.
       const DESTRUCTIVE = ["markSold", "relist", "scrap", "markListed"];
-      if (DESTRUCTIVE.includes(action)) {
+      // Marking a dud scraps the unit, so it needs the same guard. Clearing
+      // the flag does not, and must stay available as a correction.
+      const isDestructive =
+        DESTRUCTIVE.includes(action) || (action === "markDud" && payload.isDud !== false);
+      if (isDestructive) {
         const lotted = items.filter((i) => i.lotId);
         if (lotted.length) {
           throw new BadAction(`In a lot — act on the lot instead: ${lotted.map((i) => i.sku).join(", ")}`);
@@ -129,6 +134,46 @@ export async function POST(req: NextRequest) {
           const res = await tx.item.updateMany({
             where: { id: { in: ids } },
             data: { status: "SCRAPPED", orderRecordId: null, lotId: null },
+          });
+          updated = res.count;
+          break;
+        }
+        // Tagging 37 units one at a time is how a metric stops getting filled
+        // in. Both of these are bulk so a whole shelf can be classified at
+        // once while it is still in front of you.
+        case "setValueClass": {
+          const vc = VALUE_CLASSES.includes(payload.valueClass) ? payload.valueClass : null;
+          const res = await tx.item.updateMany({ where: { id: { in: ids } }, data: { valueClass: vc } });
+          updated = res.count;
+          break;
+        }
+        case "markDud": {
+          if (payload.isDud === false) {
+            // Mis-tagged: it works after all. Clear the flags, and put it back
+            // on the shelf — leaving it SCRAPPED would make the correction a
+            // one-way trip.
+            const res = await tx.item.updateMany({
+              where: { id: { in: ids } },
+              data: { isDud: false, dudReason: null },
+            });
+            await tx.item.updateMany({
+              where: { id: { in: ids }, status: "SCRAPPED" },
+              data: { status: "IN_STOCK" },
+            });
+            updated = res.count;
+            break;
+          }
+          const res = await tx.item.updateMany({
+            where: { id: { in: ids } },
+            data: {
+              isDud: true,
+              dudReason: DUD_REASONS.includes(payload.dudReason) ? payload.dudReason : "OTHER",
+              // A unit that arrived dead is not sellable stock. Scrapping it
+              // here keeps the dud rate and the shelf telling the same story.
+              status: "SCRAPPED",
+              orderRecordId: null,
+              lotId: null,
+            },
           });
           updated = res.count;
           break;

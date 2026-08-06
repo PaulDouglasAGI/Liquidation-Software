@@ -27,4 +27,4 @@ export async function ownerOrResponse() {
   return user;
 }
 
-export { parseMoney, parseDate } from "./parse";
+export { parseMoney, parseDate, parseCount } from "./parse";

@@ -184,6 +184,40 @@ export default function InventoryTable({
             Change location
           </button>
           <button disabled={busy} className={btnCls} onClick={() => confirm("Scrap selected items?") && void bulk("scrap")}>Scrap</button>
+
+          {/* Lot Performance tagging. In bulk because tagging 37 units one at
+              a time is how a metric stops getting filled in. */}
+          <button
+            disabled={busy}
+            className={btnCls}
+            title="Reliable seller — the stock worth bidding against"
+            onClick={() => void bulk("setValueClass", { valueClass: "FLOOR" })}
+          >
+            Tag floor
+          </button>
+          <button
+            disabled={busy}
+            className={btnCls}
+            title="Uncertain — upside, not budget"
+            onClick={() => void bulk("setValueClass", { valueClass: "SPECULATIVE" })}
+          >
+            Tag speculative
+          </button>
+          <button
+            disabled={busy}
+            className={btnCls}
+            onClick={() => {
+              const reason = prompt(
+                "Why is it a dud?\n\nNON_FUNCTIONAL, MISSING_PARTS, MISSING_BATTERY, DAMAGED, NOT_AS_MANIFESTED, OTHER",
+                "NON_FUNCTIONAL"
+              );
+              if (!reason) return;
+              if (!confirm(`Mark ${selected.size} unit(s) as duds? They will be scrapped.`)) return;
+              void bulk("markDud", { isDud: true, dudReason: reason.trim().toUpperCase() });
+            }}
+          >
+            Mark dud
+          </button>
           {repriceMode === "" ? (
             <>
               <button disabled={busy} className={btnCls} onClick={() => setRepriceMode("pctMsrp")}>Reprice: % of MSRP</button>

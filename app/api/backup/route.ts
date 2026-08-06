@@ -12,7 +12,7 @@ export async function GET() {
   if (!(await apiUser())) return unauthorized();
 
   const [pallets, items, expenses, supplierPurchases, settings, templates, locations, users,
-         orders, lots, countSessions, countScans, savedViews] =
+         orders, lots, countSessions, countScans, savedViews, laborEntries] =
     await Promise.all([
       prisma.pallet.findMany({ orderBy: { palletCode: "asc" } }),
       prisma.item.findMany({ orderBy: { sku: "asc" } }),
@@ -29,15 +29,18 @@ export async function GET() {
       prisma.countSession.findMany({ orderBy: { startedAt: "asc" } }),
       prisma.countScan.findMany(),
       prisma.savedView.findMany(),
+      // v8. Hours are typed in by hand and exist nowhere else — leaving them
+      // out would make a restore quietly erase every labor-derived metric.
+      prisma.laborEntry.findMany({ orderBy: { date: "asc" } }),
     ]);
 
   const backup = {
     app: "liquidation-ops",
-    version: 3,
+    version: 4,
     exportedAt: new Date().toISOString(),
     counts: {
       pallets: pallets.length, items: items.length, expenses: expenses.length,
-      orders: orders.length, lots: lots.length,
+      orders: orders.length, lots: lots.length, laborEntries: laborEntries.length,
     },
     pallets: toPlain(pallets),
     items: toPlain(items),
@@ -55,6 +58,7 @@ export async function GET() {
     countSessions: toPlain(countSessions),
     countScans: toPlain(countScans),
     savedViews: toPlain(savedViews),
+    laborEntries: toPlain(laborEntries),
   };
 
   return new Response(JSON.stringify(backup, null, 2), {

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { inputCls, inputNarrowCls, selectCls, selectNarrowCls, btnCls, btnPrimaryCls, btnDangerCls, labelCls, monoCls, panelCls } from "@/components/ui";
-import { CATEGORIES, CONDITIONS, ITEM_STATUSES, PLATFORMS, label } from "@/lib/constants";
+import { CATEGORIES, CONDITIONS, DUD_REASONS, ITEM_STATUSES, PLATFORMS, VALUE_CLASSES, label } from "@/lib/constants";
 import { money, pct, dateStr } from "@/lib/format";
 import { estimateFees, netProfit, type FeeRates } from "@/lib/fees";
 
@@ -17,6 +17,9 @@ export interface ItemData {
   category: string;
   condition: string;
   conditionNotes: string | null;
+  valueClass: string | null;
+  isDud: boolean;
+  dudReason: string | null;
   msrp: number | null;
   ourCost: number;
   sellPrice: number | null;
@@ -65,6 +68,9 @@ export default function ItemEditor({ item, locations, feeRates }: { item: ItemDa
     category: item.category,
     condition: item.condition,
     conditionNotes: s(item.conditionNotes),
+    valueClass: s(item.valueClass),
+    isDud: item.isDud,
+    dudReason: s(item.dudReason),
     msrp: s(item.msrp),
     ourCost: s(item.ourCost),
     sellPrice: s(item.sellPrice),
@@ -323,6 +329,32 @@ export default function ItemEditor({ item, locations, feeRates }: { item: ItemDa
             <div>
               <label className={labelCls}>Serial #</label>
               <input className={inputCls + " font-mono"} value={form.serialNumber} onChange={set("serialNumber")} />
+            </div>
+            <div>
+              <label className={labelCls} title="Floor stock is what we can rely on selling — the rate worth bidding against. Speculative is upside.">
+                Value class
+              </label>
+              <select className={selectCls} value={form.valueClass} onChange={set("valueClass")}>
+                <option value="">Untagged</option>
+                {VALUE_CLASSES.map((v) => <option key={v} value={v}>{label(v)}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Dud</label>
+              <select
+                className={selectCls}
+                value={form.isDud ? form.dudReason || "OTHER" : ""}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    isDud: e.target.value !== "",
+                    dudReason: e.target.value,
+                  }))
+                }
+              >
+                <option value="">No — it works</option>
+                {DUD_REASONS.map((r) => <option key={r} value={r}>{label(r)}</option>)}
+              </select>
             </div>
             <div className="col-span-2 md:col-span-4">
               <label className={labelCls}>Condition notes</label>

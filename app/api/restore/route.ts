@@ -41,6 +41,8 @@ export async function POST(req: NextRequest) {
     const countSessions = asArray(b.countSessions);
     const countScans = asArray(b.countScans);
     const savedViews = asArray(b.savedViews);
+    // v8. Absent from older backups, which just means no hours to restore.
+    const laborEntries = asArray(b.laborEntries);
     if (items.length > MAX_ITEMS) return badRequest("Backup too large");
     if (pallets.length === 0 && items.length === 0) return badRequest("Backup contains no data");
 
@@ -62,11 +64,32 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Same problem for labor: the entry points at a Pallet (must exist) and a
+    // User (accounts are not restored from the file, so the id may be for
+    // someone who does not exist here). userName is a snapshot, so dropping
+    // the user link costs nothing — the entry stays attributed by name.
+    const palletIds = new Set(pallets.map((p) => String(p.id)));
+    const userIds = new Set(
+      (await prisma.user.findMany({ select: { id: true } })).map((u) => u.id)
+    );
+    const restorableLabor = laborEntries.filter((l) => {
+      if (!l.palletId || !palletIds.has(String(l.palletId))) {
+        droppedRefs++;
+        return false; // its lot is gone; the hours have nothing to attach to
+      }
+      if (l.userId && !userIds.has(String(l.userId))) {
+        l.userId = null;
+        droppedRefs++;
+      }
+      return true;
+    });
+
     await prisma.$transaction(
       async (tx) => {
         // Delete children before parents; recreate in the reverse order.
         await tx.countScan.deleteMany();
         await tx.countSession.deleteMany();
+        await tx.laborEntry.deleteMany();
         await tx.item.deleteMany();
         await tx.order.deleteMany();
         await tx.lot.deleteMany();
@@ -79,6 +102,7 @@ export async function POST(req: NextRequest) {
         if (orders.length) await tx.order.createMany({ data: orders as unknown as Prisma.OrderCreateManyInput[] });
         if (lots.length) await tx.lot.createMany({ data: lots as unknown as Prisma.LotCreateManyInput[] });
         if (items.length) await tx.item.createMany({ data: items as unknown as Prisma.ItemCreateManyInput[] });
+        if (restorableLabor.length) await tx.laborEntry.createMany({ data: restorableLabor as unknown as Prisma.LaborEntryCreateManyInput[] });
         if (countSessions.length) await tx.countSession.createMany({ data: countSessions as unknown as Prisma.CountSessionCreateManyInput[] });
         if (countScans.length) await tx.countScan.createMany({ data: countScans as unknown as Prisma.CountScanCreateManyInput[] });
         if (savedViews.length) await tx.savedView.createMany({ data: savedViews as unknown as Prisma.SavedViewCreateManyInput[] });
@@ -120,6 +144,7 @@ export async function POST(req: NextRequest) {
       restored: {
         pallets: pallets.length, items: items.length, expenses: expenses.length,
         purchases: purchases.length, orders: orders.length, lots: lots.length,
+        laborEntries: restorableLabor.length,
       },
       // Surfaced so a pre-v7 restore explains why order links are gone.
       droppedRefs,

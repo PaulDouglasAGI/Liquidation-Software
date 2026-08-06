@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { inputCls, selectCls, btnPrimaryCls, btnCls, labelCls } from "@/components/ui";
-import { CATEGORIES, SUPPLIERS, label } from "@/lib/constants";
+import { CATEGORIES, CONDITION_GRADES, SUPPLIERS, label } from "@/lib/constants";
 import { localDateStr } from "@/lib/format";
 
 export default function PalletForm() {
@@ -14,10 +14,18 @@ export default function PalletForm() {
   const [form, setForm] = useState({
     supplier: SUPPLIERS[0] as string,
     supplierOther: "",
+    sourceLotId: "",
     purchaseDate: localDateStr(new Date()),
+    pickupDate: localDateStr(new Date()),
     totalCost: "",
+    fees: "",
     manifestUrl: "",
     category: "MIXED",
+    conditionGrade: "MIXED",
+    manifestUnitCount: "",
+    actualUnitCount: "",
+    manifestRetailTotal: "",
+    preBidEstimatedRecovery: "",
     notes: "",
   });
 
@@ -40,7 +48,12 @@ export default function PalletForm() {
     setBusy(false);
     if (res.ok) {
       setOpen(false);
-      setForm((f) => ({ ...f, totalCost: "", manifestUrl: "", notes: "" }));
+      setForm((f) => ({
+        ...f,
+        sourceLotId: "", totalCost: "", fees: "", manifestUrl: "", notes: "",
+        manifestUnitCount: "", actualUnitCount: "", manifestRetailTotal: "",
+        preBidEstimatedRecovery: "",
+      }));
       router.push(`/pallets/${data.id}`);
       router.refresh();
     } else {
@@ -78,10 +91,63 @@ export default function PalletForm() {
           <input type="number" step="0.01" min="0" required className={inputCls + " font-mono"} value={form.totalCost} onChange={set("totalCost")} placeholder="0.00" />
         </div>
         <div>
+          <label className={labelCls}>Fees (premium, tax)</label>
+          <input type="number" step="0.01" min="0" className={inputCls + " font-mono"} value={form.fees} onChange={set("fees")} placeholder="0.00" />
+        </div>
+        <div>
           <label className={labelCls}>Category</label>
           <select className={selectCls} value={form.category} onChange={set("category")}>
             {CATEGORIES.map((c) => <option key={c} value={c}>{label(c)}</option>)}
           </select>
+        </div>
+        <div>
+          <label className={labelCls}>Condition grade</label>
+          <select className={selectCls} value={form.conditionGrade} onChange={set("conditionGrade")}>
+            {CONDITION_GRADES.map((c) => <option key={c} value={c}>{label(c)}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={labelCls}>Pickup date</label>
+          <input type="date" className={inputCls} value={form.pickupDate} onChange={set("pickupDate")} />
+        </div>
+        <div>
+          <label className={labelCls}>Seller&apos;s lot ID</label>
+          <input className={inputCls + " font-mono"} value={form.sourceLotId} onChange={set("sourceLotId")} placeholder="e.g. 40123d6b" />
+        </div>
+
+        {/* The bidding-calibration inputs. The estimate is the one that
+            matters: without it, this lot never scores on estimate accuracy. */}
+        <div className="col-span-2 md:col-span-4 border-t border-edge pt-2 text-[11px] text-muted">
+          Record these before you bid — they are what makes the Lot Performance metrics work.
+        </div>
+        <div>
+          <label className={labelCls}>Est. recovery (pre-bid)</label>
+          <input
+            type="number" step="0.01" min="0"
+            className={inputCls + " font-mono"}
+            value={form.preBidEstimatedRecovery}
+            onChange={set("preBidEstimatedRecovery")}
+            placeholder="what you expect to bank"
+          />
+        </div>
+        <div>
+          <label className={labelCls}>Manifest units</label>
+          <input type="number" step="1" min="0" className={inputCls + " font-mono"} value={form.manifestUnitCount} onChange={set("manifestUnitCount")} placeholder="promised" />
+        </div>
+        <div>
+          <label className={labelCls}>Actual units</label>
+          <input type="number" step="1" min="0" className={inputCls + " font-mono"} value={form.actualUnitCount} onChange={set("actualUnitCount")} placeholder="turned up" />
+        </div>
+        <div>
+          <label className={labelCls}>Manifest retail total</label>
+          <input
+            type="number" step="0.01" min="0"
+            className={inputCls + " font-mono"}
+            value={form.manifestRetailTotal}
+            onChange={set("manifestRetailTotal")}
+            placeholder="context only"
+            title="Recorded for reference. Never used to price or value anything — manifest retail is not reliable."
+          />
         </div>
         <div className="col-span-2">
           <label className={labelCls}>Manifest URL (optional)</label>

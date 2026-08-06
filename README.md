@@ -126,6 +126,7 @@ and per IP.
 | Item detail | `/items/[id]` | Full editor, live margin calc, eBay Market Check, one-click eBay listing push, Amazon flat-file export, Facebook text-block export, photo management, print label |
 | Barcode labels | `/labels` | Printable Code 128 SKU labels (2.25"×1.25", thermal- and paper-friendly) — single item or bulk from the inventory selection; scanning a label finds the item |
 | Insights | `/insights` | Days-to-sell and MSRP-recovery by category and brand, monthly trend, return rate, and **smart repricing**: suggested cuts for aging listings (10%/20%, never below cost) applied in one click |
+| Lot Performance | `/performance` | The labor-aware view of what a lot actually earned. Five metrics per lot — **profit per labor hour**, dud rate (by reason), sell-through at 30/60/90 days from pickup, days from pickup to first listing, and estimate accuracy (actual recovery ÷ your pre-bid estimate). `/performance/insights` rolls them up by lot category and condition grade to answer "what should we buy next?". A persistent **Log hours** button on every screen records a work session in about three taps. **Lot cost is never allocated to individual units** — manifest retail is too unreliable to split from, so profit is measured against the whole lot and nothing else. (The separate per-item "reallocate cost/item" on a pallet feeds the older per-item P&L views only; Lot Performance ignores it.) |
 | Activity | `/activity` | Team audit trail — intake, status changes, imports, listings, restores; who did what, when |
 | P&L | `/pnl` | Date presets + custom range, group by pallet/category/platform/day/week/month — **net of platform fees and shipping** (rates configurable in Settings, stamped on each sale, editable per item), plus expenses, CSV export |
 | Suppliers | `/suppliers` | Purchase log per supplier + ROI per supplier derived from pallet records |
@@ -133,7 +134,7 @@ and per IP.
 
 ### Keyboard shortcuts (desktop)
 
-`N` new item (intake) · `I` inventory · `P` pallets · `G` insights · `D` dashboard · `L` P&L · `U` suppliers · `/` focus search · `S` save (item editor)
+`N` new item (intake) · `I` inventory · `P` pallets · `G` insights · `R` lot performance · `D` dashboard · `L` P&L · `U` suppliers · `/` focus search · `S` save (item editor)
 
 ### Returns
 

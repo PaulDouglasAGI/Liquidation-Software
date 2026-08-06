@@ -1,6 +1,8 @@
 // String-literal mirrors of the Prisma enums, safe to import from client components.
 
 export const PALLET_STATUSES = [
+  "BIDDING",
+  "WON",
   "RECEIVED",
   "IN_PROCESSING",
   "PARTIALLY_LISTED",
@@ -13,10 +15,20 @@ export const CATEGORIES = [
   "POWER_TOOLS",
   "HAND_TOOLS",
   "HARDWARE",
+  "ELECTRICAL_LIGHTING",
+  "PLUMBING",
+  "GENERAL_HOME",
   "APPLIANCES",
   "MIXED",
 ] as const;
 export type ProductCategory = (typeof CATEGORIES)[number];
+
+export {
+  CONDITION_GRADES,
+  DUD_REASONS,
+  LABOR_ACTIVITIES,
+  VALUE_CLASSES,
+} from "./lotPerformanceMath";
 
 export const CONDITIONS = ["NEW", "LIKE_NEW", "GOOD", "FAIR", "FOR_PARTS"] as const;
 export type ItemCondition = (typeof CONDITIONS)[number];
@@ -48,6 +60,8 @@ export const LABELS: Record<string, string> = {
   SHIPPED: "Shipped",
   CANCELLED: "Cancelled",
   DRAFT: "Draft",
+  BIDDING: "Bidding",
+  WON: "Won — not collected",
   RECEIVED: "Received",
   IN_PROCESSING: "In Processing",
   PARTIALLY_LISTED: "Partially Listed",
@@ -56,9 +70,33 @@ export const LABELS: Record<string, string> = {
   POWER_TOOLS: "Power Tools",
   HAND_TOOLS: "Hand Tools",
   HARDWARE: "Hardware",
+  ELECTRICAL_LIGHTING: "Electrical / Lighting",
+  PLUMBING: "Plumbing",
+  GENERAL_HOME: "General Home",
   APPLIANCES: "Appliances",
   MIXED: "Mixed",
   NEW: "New",
+
+  // Condition grades — how the seller graded the lot.
+  SHELF_PULL: "Shelf Pull",
+  OVERSTOCK: "Overstock",
+  CUSTOMER_RETURNS: "Customer Returns",
+  SALVAGE: "Salvage",
+
+  // Labor
+  PICKUP_TRANSPORT: "Pickup / Transport",
+  TESTING_SORTING: "Testing / Sorting",
+  PHOTOGRAPHING_LISTING: "Photos / Listing",
+  PACKING_SHIPPING: "Packing / Shipping",
+
+  // Unit classification
+  FLOOR: "Floor",
+  SPECULATIVE: "Speculative",
+  NON_FUNCTIONAL: "Non-functional",
+  MISSING_PARTS: "Missing parts",
+  MISSING_BATTERY: "Missing battery",
+  DAMAGED: "Damaged",
+  NOT_AS_MANIFESTED: "Not as manifested",
   LIKE_NEW: "Like New",
   GOOD: "Good",
   FAIR: "Fair",

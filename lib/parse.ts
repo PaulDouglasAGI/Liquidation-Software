@@ -8,6 +8,17 @@ export function parseMoney(v: unknown): number | null {
   return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null;
 }
 
+/**
+ * A whole-number count (unit counts, quantities). Rejects fractions outright
+ * rather than rounding — "37.5 units" is a mis-mapped column, not a count.
+ */
+export function parseCount(v: unknown): number | null {
+  if (v === null || v === undefined) return null;
+  if (typeof v === "string" && v.trim() === "") return null;
+  const n = typeof v === "number" ? v : Number(String(v).trim().replace(/,/g, ""));
+  return Number.isInteger(n) && n >= 0 ? n : null;
+}
+
 export function parseDate(v: unknown): Date | null {
   if (!v || typeof v !== "string") return null;
   const d = new Date(v.length === 10 ? `${v}T12:00:00` : v);
