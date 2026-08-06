@@ -134,14 +134,10 @@ export default function BidCalculator({ knownCategories, totalSales }: { knownCa
       ) : null}
 
       <div className={panelCls + " p-3"}>
-        <label className={labelCls}>Manifest (CSV or tab-separated, with a header row)</label>
-        <textarea
-          className={inputNarrowCls + " h-40 w-full font-mono text-[12px]"}
-          placeholder={SAMPLE}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-        />
-        <div className="mt-2 flex flex-wrap items-center gap-2">
+        {/* Upload leads: a supplier manifest arrives as a file, so make that the
+            obvious action and keep pasting as the fallback. It previously sat
+            under a tall textarea where it was easy to miss entirely. */}
+        <div className="flex flex-wrap items-center gap-2">
           <input
             ref={fileRef}
             type="file"
@@ -153,21 +149,39 @@ export default function BidCalculator({ knownCategories, totalSales }: { knownCa
               e.target.value = ""; // re-selecting the same file must re-fire
             }}
           />
-          <button className={btnPrimaryCls} onClick={() => fileRef.current?.click()}>
-            Upload manifest CSV
+          <button className={btnPrimaryCls + " px-4 py-2"} onClick={() => fileRef.current?.click()}>
+            📄 Upload manifest CSV
           </button>
-          <button className={btnCls} onClick={() => setText(SAMPLE)}>Load a sample</button>
+          <span className="text-[12px] text-muted">
+            Straight from Liquidation.com or B-Stock — reads Product, Make, Quantity and
+            Retail Price, and ignores the totals row.
+          </span>
+        </div>
+
+        {fileName ? (
+          <p className="mt-2 text-[12px] text-ok">Loaded {fileName}</p>
+        ) : null}
+
+        <div className="mt-3 flex items-center gap-2">
+          <label className={labelCls + " mb-0"}>or paste it here</label>
+          <button className={btnCls + " px-1.5 py-0.5 text-[11px]"} onClick={() => setText(SAMPLE)}>
+            sample
+          </button>
           {text ? (
-            <button className={btnCls} onClick={() => { setText(""); setFileName(""); setEst(null); setAtBid(null); }}>
-              Clear
+            <button
+              className={btnCls + " px-1.5 py-0.5 text-[11px]"}
+              onClick={() => { setText(""); setFileName(""); setEst(null); setAtBid(null); setMsg(""); }}
+            >
+              clear
             </button>
           ) : null}
-          {fileName ? <span className="text-[12px] text-muted">{fileName}</span> : null}
         </div>
-        <p className="mt-1 text-[11px] text-muted">
-          Works with a supplier sheet as-is — recognises Product/Description, Make/Brand,
-          Quantity, and Retail Price columns, and ignores a trailing totals row.
-        </p>
+        <textarea
+          className={inputNarrowCls + " mt-1 h-28 w-full font-mono text-[12px]"}
+          placeholder={SAMPLE}
+          value={text}
+          onChange={(e) => { setText(e.target.value); setFileName(""); }}
+        />
       </div>
 
       <div className={panelCls + " p-3"}>
