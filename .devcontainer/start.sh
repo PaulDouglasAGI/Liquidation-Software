@@ -44,7 +44,20 @@ if ! deps_ok; then
 fi
 
 bash .devcontainer/wait-for-db.sh || warn "Database not reachable — the app will error until it is."
-npx prisma migrate deploy >/dev/null 2>&1 || true
+
+# Migrations only need applying when they have actually changed. Running
+# `prisma migrate deploy` on every attach costs several seconds and prints
+# noise for a no-op; a fingerprint of the migrations folder skips it.
+MIG_STAMP=".devcontainer/.migrations-applied"
+MIG_NOW=$(find prisma/migrations -name migration.sql -type f 2>/dev/null | sort | xargs cksum 2>/dev/null | cksum)
+if [ ! -f "$MIG_STAMP" ] || [ "$(cat "$MIG_STAMP" 2>/dev/null)" != "$MIG_NOW" ]; then
+  say "Applying database migrations…"
+  if npx prisma migrate deploy >/dev/null 2>&1; then
+    printf '%s' "$MIG_NOW" > "$MIG_STAMP"
+  else
+    warn "Migrations did not apply — run: npx prisma migrate deploy"
+  fi
+fi
 
 release_lock
 

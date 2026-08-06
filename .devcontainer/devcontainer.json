@@ -22,7 +22,12 @@
       // renders the app in a cross-site iframe, where the SameSite=Lax session
       // cookie is never sent back — you would sign in and be bounced straight
       // to /login again. A normal tab is first-party, so auth works.
-      "onAutoForward": "openBrowser"
+      "onAutoForward": "openBrowser",
+      // Declared so Codespaces stops resetting the port to private on every
+      // rebuild. Without this the forwarded URL 404s (not even forwarded) or
+      // 502s until someone flips visibility by hand, every single time.
+      "visibility": "public",
+      "requireLocalPort": true
     }
   },
 
