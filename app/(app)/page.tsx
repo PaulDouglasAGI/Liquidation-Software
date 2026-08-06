@@ -6,6 +6,8 @@ import { num } from "@/lib/serialize";
 import { money, pct, dateStr, daysSince, marginPct } from "@/lib/format";
 import { label } from "@/lib/constants";
 import { Stat, panelCls, thCls, tdCls, monoCls } from "@/components/ui";
+import { valueCurrentInventory } from "@/lib/valuation";
+import { basisNote } from "@/lib/valuationMath";
 import EbaySync from "@/components/EbaySync";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +29,7 @@ function Bar({ value, max, color }: { value: number; max: number; color: string 
 
 export default async function Dashboard() {
   await requireUser();
+  const valuation = await valueCurrentInventory();
   const [agingDays, lowMarginPct] = await Promise.all([
     getSettingNum("agingDays"),
     getSettingNum("lowMarginPct"),
@@ -155,7 +158,86 @@ export default async function Dashboard() {
         <Stat label={`Aging (${agingDays}+ days)`} value={String(agingCount)} tone={agingCount > 0 ? "danger" : undefined} />
       </div>
 
-      {/* Row 3: pallet ROI */}
+      {/* Row 3: what the shelves are worth */}
+      <div className={panelCls}>
+        <div className="flex flex-wrap items-center gap-2 border-b border-edge px-3 py-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-accent">
+            Inventory value — {valuation.units} unsold unit{valuation.units === 1 ? "" : "s"}
+          </span>
+          <span
+            className={`text-[11px] uppercase tracking-wider ${
+              valuation.basis === "history" ? "text-ok" : valuation.basis === "blended" ? "text-zinc-300" : "text-muted"
+            }`}
+          >
+            {valuation.basis === "history"
+              ? "from your sales data"
+              : valuation.basis === "blended"
+              ? "part data, part estimate"
+              : "estimate only"}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 p-3 md:grid-cols-4">
+          <Stat label="Tied up (what we paid)" value={money(valuation.costBasis)} />
+          <Stat
+            label="Expected to sell for"
+            value={money(valuation.expectedNet)}
+            tone="accent"
+            sub="after fees, at expected sell-through"
+          />
+          <Stat
+            label="Profit still on the shelves"
+            value={money(valuation.expectedProfit)}
+            tone={valuation.expectedProfit >= 0 ? "ok" : "danger"}
+            sub={valuation.expectedRoiPct !== null ? `${valuation.expectedRoiPct}% return on cost` : undefined}
+          />
+          <Stat
+            label="Retail / asking"
+            value={money(valuation.retailValue)}
+            sub={`asking ${money(valuation.askingValue)}`}
+          />
+        </div>
+
+        <p className="border-t border-edge px-3 py-2 text-[12px] text-muted">
+          {basisNote(valuation)}
+        </p>
+
+        {valuation.byCategory.length > 0 ? (
+          <table className="w-full text-[13px]">
+            <thead>
+              <tr>
+                <th className={thCls}>Category</th>
+                <th className={thCls + " text-right"}>Units</th>
+                <th className={thCls + " text-right"}>Tied up</th>
+                <th className={thCls + " text-right"}>Expected net</th>
+                <th className={thCls + " text-right"}>Profit</th>
+                <th className={thCls}>Valued from</th>
+              </tr>
+            </thead>
+            <tbody>
+              {valuation.byCategory.map((c) => {
+                const profit = Math.round((c.expectedNet - c.costBasis) * 100) / 100;
+                return (
+                  <tr key={c.key} className="hover:bg-raised/60">
+                    <td className={tdCls}>{label(c.key)}</td>
+                    <td className={`${tdCls} ${monoCls} text-right`}>{c.units}</td>
+                    <td className={`${tdCls} ${monoCls} text-right text-muted`}>{money(c.costBasis)}</td>
+                    <td className={`${tdCls} ${monoCls} text-right`}>{money(c.expectedNet)}</td>
+                    <td className={`${tdCls} ${monoCls} text-right ${profit >= 0 ? "text-ok" : "text-danger"}`}>
+                      {money(profit)}
+                    </td>
+                    <td className={tdCls + " text-[12px] text-muted"}>
+                      {c.source === "brand" || c.source === "category" ? "your sales" : c.source === "asking" ? "asking price" : "estimate"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ) : null}
+      </div>
+
+      {/* Row 4: pallet ROI */}
       <div className={panelCls}>
         <div className="border-b border-edge px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted">Pallet ROI — active pallets</div>
         <div className="overflow-x-auto">
