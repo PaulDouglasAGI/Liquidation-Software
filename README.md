@@ -20,6 +20,13 @@ sets up the database, and starts the dev server. First build takes a few
 minutes; after that the app opens in a new browser tab (or use the **PORTS**
 tab and click the 🌐 globe next to port 3000).
 
+> **Getting `HTTP ERROR 502`?** The app is almost certainly running fine — the
+> request just isn't reaching it. Open the **PORTS** tab, right-click port 3000,
+> and set **Port Visibility → Public**. Always open the app with the 🌐 globe
+> icon on that row rather than a saved URL: each Codespace gets a new hostname,
+> and an old URL keeps resolving but forwards nowhere. `npm run doctor` will
+> tell you whether the server itself is up.
+
 > Open it in a **real browser tab**, not VS Code's built-in preview pane. The
 > preview renders the app in a cross-site iframe, and browsers will not send a
 > `SameSite=Lax` session cookie into one — you would sign in and land straight

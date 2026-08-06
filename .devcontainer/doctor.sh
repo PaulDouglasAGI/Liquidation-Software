@@ -71,7 +71,14 @@ fi
 echo
 echo "Web server (port 3000)"
 if server_responding 3000; then
-  echo "  listening     yes — the app is up; open the PORTS tab globe icon"
+  echo "  listening     yes — the app is up"
+  echo
+  echo "  Still getting a 502 on the *.app.github.dev URL? Then the request is"
+  echo "  not reaching this server, and the app is not the problem:"
+  echo "    1. VS Code -> PORTS tab -> port 3000 -> click the globe icon."
+  echo "       Never reuse a saved URL: every Codespace gets a new hostname and"
+  echo "       an old one 502s forever."
+  echo "    2. Still 502? Right-click port 3000 -> Port Visibility -> Public."
 else
   echo "  listening     NO  <-- this is what produces a 502 on the forwarded port"
   if pgrep -f "next dev" >/dev/null 2>&1; then
