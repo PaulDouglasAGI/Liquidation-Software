@@ -32,7 +32,7 @@ server_responding() {
   local port="${1:-3000}"
   node -e '
     const http = require("http");
-    const req = http.get({ host: "127.0.0.1", port: process.argv[1], path: "/login", timeout: 3000 },
+    const req = http.get({ host: "127.0.0.1", port: process.argv[1], path: "/login", timeout: 15000 },
       res => { res.resume(); process.exit(res.statusCode && res.statusCode < 500 ? 0 : 1); });
     req.on("error", () => process.exit(1));
     req.on("timeout", () => { req.destroy(); process.exit(1); });

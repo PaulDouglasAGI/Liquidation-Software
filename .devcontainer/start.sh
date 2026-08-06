@@ -52,7 +52,9 @@ say "Starting the dev server…"
 : > "$LOG"
 # setsid detaches from this script's process group, so the server survives
 # whatever the attach task does when it finishes.
-setsid nohup node_modules/.bin/next dev -H 0.0.0.0 -p "$PORT" >>"$LOG" 2>&1 < /dev/null &
+# Under a supervisor, so a clean kill (which has happened twice when the VS
+# Code attach task went away) self-heals instead of leaving a 502 behind.
+setsid nohup bash .devcontainer/supervise.sh "$PORT" "$LOG" >>"$LOG" 2>&1 < /dev/null &
 SERVER_PID=$!
 disown 2>/dev/null || true
 
