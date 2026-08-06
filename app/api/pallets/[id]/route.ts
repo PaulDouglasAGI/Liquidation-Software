@@ -3,6 +3,8 @@ import { prisma } from "@/lib/db";
 import { apiUser, badRequest, notFound, parseDate, parseMoney, serverError, unauthorized } from "@/lib/api";
 import { CATEGORIES, PALLET_STATUSES } from "@/lib/constants";
 import { recalcPalletStatus } from "@/lib/pallets";
+import { checkPalletDeletion } from "@/lib/palletStatus";
+import { logActivity } from "@/lib/activity";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -39,16 +41,48 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
 }
 
+/** Counts the history attached to a pallet, for the deletion guard. */
+async function deletionCounts(palletId: string) {
+  const [total, sold, returned, onOrder, inLot] = await Promise.all([
+    prisma.item.count({ where: { palletId } }),
+    prisma.item.count({ where: { palletId, status: "SOLD" } }),
+    prisma.item.count({ where: { palletId, status: "RETURNED" } }),
+    prisma.item.count({
+      where: { palletId, orderRecord: { status: { notIn: ["SHIPPED", "CANCELLED"] } } },
+    }),
+    prisma.item.count({ where: { palletId, lotId: { not: null } } }),
+  ]);
+  return { total, sold, returned, onOrder, inLot };
+}
+
+/**
+ * DELETE /api/pallets/[id] — removes the pallet AND everything on it.
+ *
+ * Importing the wrong manifest is a normal mistake; this is the way back.
+ * Blocked when the pallet carries real history (see checkPalletDeletion), so a
+ * recorded sale can never be silently erased from P&L.
+ */
 export async function DELETE(_req: NextRequest, { params }: Params) {
-  if (!(await apiUser())) return unauthorized();
+  const user = await apiUser();
+  if (!user) return unauthorized();
   try {
     const { id } = await params;
-    const itemCount = await prisma.item.count({ where: { palletId: id } });
-    if (itemCount > 0) {
-      return badRequest(`Pallet has ${itemCount} items. Remove or move them before deleting.`);
+    const pallet = await prisma.pallet.findUnique({ where: { id }, select: { palletCode: true } });
+    if (!pallet) return notFound("Pallet not found");
+
+    const counts = await deletionCounts(id);
+    const check = checkPalletDeletion(counts);
+    if (!check.allowed) {
+      return NextResponse.json(
+        { error: `Cannot delete ${pallet.palletCode}`, blockers: check.blockers },
+        { status: 409 }
+      );
     }
+
+    // Items cascade from the pallet FK, so this removes both in one statement.
     await prisma.pallet.delete({ where: { id } });
-    return NextResponse.json({ ok: true });
+    logActivity(user.name, "pallet.delete", `${pallet.palletCode} and ${counts.total} item(s)`);
+    return NextResponse.json({ ok: true, deletedItems: counts.total, palletCode: pallet.palletCode });
   } catch (e) {
     return serverError(e);
   }
@@ -56,11 +90,33 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
 
 /** POST /api/pallets/[id] with {action:"allocate"} evenly spreads pallet cost across items. */
 export async function POST(req: NextRequest, { params }: Params) {
-  if (!(await apiUser())) return unauthorized();
+  const user = await apiUser();
+  if (!user) return unauthorized();
   try {
     const { id } = await params;
     const b = await req.json().catch(() => ({}));
-    if (b?.action !== "allocate") return badRequest("Unknown action");
+    if (b?.action !== "allocate" && b?.action !== "clearItems") {
+      return badRequest("Unknown action");
+    }
+
+    // Wrong CSV on the right pallet: empty it so the correct one can be
+    // imported, without losing the pallet's code, supplier, or cost.
+    if (b.action === "clearItems") {
+      const existing = await prisma.pallet.findUnique({ where: { id }, select: { palletCode: true } });
+      if (!existing) return notFound("Pallet not found");
+      const counts = await deletionCounts(id);
+      const check = checkPalletDeletion(counts);
+      if (!check.allowed) {
+        return NextResponse.json(
+          { error: `Cannot clear ${existing.palletCode}`, blockers: check.blockers },
+          { status: 409 }
+        );
+      }
+      const { count } = await prisma.item.deleteMany({ where: { palletId: id } });
+      await recalcPalletStatus(id);
+      logActivity(user.name, "pallet.clear", `${existing.palletCode}: removed ${count} item(s)`);
+      return NextResponse.json({ ok: true, cleared: count, palletCode: existing.palletCode });
+    }
     const pallet = await prisma.pallet.findUnique({ where: { id }, include: { items: { select: { id: true } } } });
     if (!pallet) return notFound("Pallet not found");
     if (pallet.items.length === 0) return badRequest("Pallet has no items");

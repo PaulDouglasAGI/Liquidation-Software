@@ -52,6 +52,7 @@ export default async function PalletDetail({ params }: { params: Promise<{ id: s
       <PalletEditor
         pallet={{
           id: pallet.id,
+          palletCode: pallet.palletCode,
           supplier: pallet.supplier,
           purchaseDate: pallet.purchaseDate.toISOString(),
           totalCost: cost,

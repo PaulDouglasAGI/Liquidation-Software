@@ -28,3 +28,52 @@ export function decidePalletStatus(c: PalletItemCounts): PalletComputedStatus {
   if (c.listedOrBeyond < c.total) return "PARTIALLY_LISTED";
   return "FULLY_LISTED";
 }
+
+/** What is currently attached to a pallet, for deciding if it can be emptied. */
+export interface PalletDeletionCounts {
+  total: number;
+  /** Items already sold — their revenue is in P&L. */
+  sold: number;
+  /** Items attached to an order that has not shipped or been cancelled. */
+  onOrder: number;
+  /** Items reserved inside a lot listing. */
+  inLot: number;
+  /** Items returned by a customer — part of the sale history. */
+  returned: number;
+}
+
+export interface DeletionCheck {
+  allowed: boolean;
+  /** Human-readable reasons, each naming the fix. */
+  blockers: string[];
+}
+
+/**
+ * Whether a pallet's items can be deleted outright.
+ *
+ * Importing the wrong manifest is a normal mistake and must be undoable. Losing
+ * a recorded sale is not: deleting a SOLD item would silently remove its
+ * revenue, fees, and COGS from a P&L that may already have been reported. So
+ * anything with real history blocks, and the message says how to clear it.
+ */
+export function checkPalletDeletion(c: PalletDeletionCounts): DeletionCheck {
+  const blockers: string[] = [];
+  const s = (n: number) => (n === 1 ? "" : "s");
+
+  if (c.sold > 0) {
+    blockers.push(
+      `${c.sold} item${s(c.sold)} already sold — deleting would erase that revenue from P&L. ` +
+        `Scrap them instead if they were a mistake.`
+    );
+  }
+  if (c.returned > 0) {
+    blockers.push(`${c.returned} item${s(c.returned)} returned by a customer — that history cannot be deleted.`);
+  }
+  if (c.onOrder > 0) {
+    blockers.push(`${c.onOrder} item${s(c.onOrder)} on an open order — ship or cancel it in Ship Today first.`);
+  }
+  if (c.inLot > 0) {
+    blockers.push(`${c.inLot} item${s(c.inLot)} in a lot — break the lot up first.`);
+  }
+  return { allowed: blockers.length === 0, blockers };
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { panelCls, thCls, tdCls, monoCls, btnCls, btnPrimaryCls, inputNarrowCls, labelCls, Stat } from "@/components/ui";
 import { money } from "@/lib/format";
 import { CATEGORIES, label } from "@/lib/constants";
@@ -23,6 +23,9 @@ Shop Vacuum,APPLIANCES,,4,129`;
 
 export default function BidCalculator({ knownCategories, totalSales }: { knownCategories: CatStat[]; totalSales: number }) {
   const [text, setText] = useState("");
+  const [fileName, setFileName] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+
   const [askPrice, setAskPrice] = useState("");
   const [assumptions, setAssumptions] = useState({
     sellThroughPct: "85", targetMarginPct: "35", shippingPerUnit: "0", fallbackRecoveryPct: "30", platform: "EBAY",
@@ -32,6 +35,37 @@ export default function BidCalculator({ knownCategories, totalSales }: { knownCa
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
 
+  /**
+   * Load a manifest file straight from the supplier.
+   *
+   * Real sheets (Liquidation.com, B-Stock) are downloaded as .csv and often
+   * carry a trailing totals row with a blank product name; that row is dropped
+   * here so it cannot be valued as a line item.
+   */
+  async function loadFile(file: File) {
+    setMsg("");
+    const raw = await file.text().catch(() => "");
+    if (!raw.trim()) { setMsg("That file looks empty."); return; }
+
+    const rows = parseCsv(raw.trim()).filter((r) => r.some((c) => c.trim()));
+    if (rows.length < 2) { setMsg("Need a header row and at least one product row."); return; }
+
+    // Drop a trailing summary line: suppliers append one with no product name
+    // but a populated total, which would otherwise be priced as a unit.
+    const header = rows[0].map((h) => h.trim().toLowerCase());
+    const nameIdx = header.findIndex((h) => ["name", "description", "item", "product"].includes(h));
+    const body = nameIdx >= 0 ? rows.slice(1).filter((r) => (r[nameIdx] ?? "").trim()) : rows.slice(1);
+    const dropped = rows.length - 1 - body.length;
+
+    // Re-serialise so the textarea shows exactly what will be valued.
+    const cell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    setText([rows[0], ...body].map((r) => r.map(cell).join(",")).join("\n"));
+    setFileName(file.name);
+    setMsg(
+      `Loaded ${body.length} row(s) from ${file.name}` +
+        (dropped > 0 ? ` — skipped ${dropped} row(s) with no product name (usually the totals line)` : "")
+    );
+  }
   async function run() {
     setBusy(true); setMsg("");
     const rows = parseCsv(text.trim());
@@ -41,18 +75,23 @@ export default function BidCalculator({ knownCategories, totalSales }: { knownCa
     const idx = (names: string[]) => header.findIndex((h) => names.includes(h));
     const iName = idx(["name", "description", "item", "product"]);
     const iCat = idx(["category", "cat", "type"]);
-    const iBrand = idx(["brand", "manufacturer"]);
-    const iQty = idx(["qty", "quantity", "units", "count"]);
-    const iMsrp = idx(["msrp", "retail", "price", "unit retail", "retail price"]);
+    const iBrand = idx(["brand", "manufacturer", "make", "mfr"]);
+    const iQty = idx(["qty", "quantity", "units", "count", "qty."]);
+    const iMsrp = idx(["msrp", "retail", "price", "unit retail", "retail price", "unit price", "list price"]);
     if (iName === -1) { setBusy(false); setMsg("Could not find a name/description column."); return; }
 
-    const lines = rows.slice(1).filter((r) => r.some((c) => c.trim())).map((r) => ({
+    const lines = rows
+      .slice(1)
+      // A supplier totals row has no product name but a populated total; it
+      // would otherwise be valued as a line item.
+      .filter((r) => r.some((c) => c.trim()) && (r[iName] ?? "").trim())
+      .map((r) => ({
       name: r[iName] ?? "",
       category: iCat >= 0 ? (r[iCat] ?? "").trim().toUpperCase().replace(/[\s-]+/g, "_") : "MIXED",
       brand: iBrand >= 0 ? r[iBrand] : null,
       qty: iQty >= 0 ? r[iQty] : "1",
       msrp: iMsrp >= 0 ? (r[iMsrp] ?? "").replace(/[$,]/g, "") : null,
-    }));
+      }));
 
     const res = await fetch("/api/bid", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -102,7 +141,33 @@ export default function BidCalculator({ knownCategories, totalSales }: { knownCa
           value={text}
           onChange={(e) => setText(e.target.value)}
         />
-        <button className={btnCls + " mt-2"} onClick={() => setText(SAMPLE)}>Load a sample</button>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".csv,.tsv,.txt,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void loadFile(f);
+              e.target.value = ""; // re-selecting the same file must re-fire
+            }}
+          />
+          <button className={btnPrimaryCls} onClick={() => fileRef.current?.click()}>
+            Upload manifest CSV
+          </button>
+          <button className={btnCls} onClick={() => setText(SAMPLE)}>Load a sample</button>
+          {text ? (
+            <button className={btnCls} onClick={() => { setText(""); setFileName(""); setEst(null); setAtBid(null); }}>
+              Clear
+            </button>
+          ) : null}
+          {fileName ? <span className="text-[12px] text-muted">{fileName}</span> : null}
+        </div>
+        <p className="mt-1 text-[11px] text-muted">
+          Works with a supplier sheet as-is — recognises Product/Description, Make/Brand,
+          Quantity, and Retail Price columns, and ignores a trailing totals row.
+        </p>
       </div>
 
       <div className={panelCls + " p-3"}>
