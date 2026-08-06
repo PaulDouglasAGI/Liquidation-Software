@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { apiUser, badRequest, notFound, parseMoney, serverError, unauthorized } from "@/lib/api";
 import { createItemsWithSkus } from "@/lib/skus";
+import { normalizeBrand } from "@/lib/parse";
 import { recalcPalletStatus } from "@/lib/pallets";
 import { getSettingNum } from "@/lib/settings";
 import { CATEGORIES, CONDITIONS } from "@/lib/constants";
@@ -49,7 +50,7 @@ export async function POST(req: NextRequest) {
     const data = {
         upc: typeof b.upc === "string" && b.upc.trim() ? b.upc.replace(/\D/g, "") : null,
         name,
-        brand: typeof b.brand === "string" && b.brand.trim() ? b.brand.trim() : null,
+        brand: normalizeBrand(b.brand),
         category: CATEGORIES.includes(b.category) ? b.category : pallet.category,
         condition: CONDITIONS.includes(b.condition) ? b.condition : "GOOD",
         conditionNotes: typeof b.conditionNotes === "string" && b.conditionNotes.trim() ? b.conditionNotes.trim() : null,

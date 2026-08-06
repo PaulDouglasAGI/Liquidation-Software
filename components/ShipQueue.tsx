@@ -35,7 +35,11 @@ const URGENCY_TEXT: Record<Urgency, string> = {
   late: "LATE", today: "Today", soon: "Tomorrow", ok: "", none: "—",
 };
 
-export default function ShipQueue({ orders, shippedToday }: { orders: OrderRow[]; shippedToday: number }) {
+export default function ShipQueue({
+  orders, shippedToday, totalOpen, overdueOpen,
+}: {
+  orders: OrderRow[]; shippedToday: number; totalOpen: number; overdueOpen: number;
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
@@ -73,7 +77,8 @@ export default function ShipQueue({ orders, shippedToday }: { orders: OrderRow[]
     [orders]
   );
 
-  const lateCount = sorted.filter((o) => urgencyOf(o.shipByDate, now) === "late").length;
+  // Counted server-side across ALL open orders, not just the loaded page.
+  const truncated = totalOpen > orders.length;
 
   async function patch(id: string, body: Record<string, unknown>) {
     setBusy(id);
@@ -109,8 +114,12 @@ export default function ShipQueue({ orders, shippedToday }: { orders: OrderRow[]
       </div>
 
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-        <Stat label="Orders to ship" value={String(sorted.length)} />
-        <Stat label="Late" value={String(lateCount)} tone={lateCount > 0 ? "danger" : undefined} />
+        <Stat
+          label="Orders to ship"
+          value={String(totalOpen)}
+          sub={truncated ? `showing the ${orders.length} most urgent` : undefined}
+        />
+        <Stat label="Late" value={String(overdueOpen)} tone={overdueOpen > 0 ? "danger" : undefined} />
         <Stat label="Items to pick" value={String(pickList.length)} />
         <Stat label="Shipped today" value={String(shippedToday)} tone="ok" />
       </div>
@@ -150,6 +159,17 @@ export default function ShipQueue({ orders, shippedToday }: { orders: OrderRow[]
               </tbody>
             </table>
           )}
+        </div>
+      ) : null}
+
+      {truncated ? (
+        <div className={panelCls + " border-accent/40 px-3 py-2 text-[12px]"}>
+          <span className="font-semibold text-accent">
+            Showing {orders.length} of {totalOpen} open orders
+          </span>
+          <span className="text-muted">
+            {" "}— the most urgent by ship-by date. Ship or cancel some to see the rest.
+          </span>
         </div>
       ) : null}
 

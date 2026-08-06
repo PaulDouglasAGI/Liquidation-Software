@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { apiUser, badRequest, notFound, parseMoney, serverError, unauthorized } from "@/lib/api";
+import { normalizeBrand } from "@/lib/parse";
 import { createItemBatches, isUniqueViolation, type ItemBatch } from "@/lib/skus";
 import { recalcPalletStatus } from "@/lib/pallets";
 import { getSettingNum } from "@/lib/settings";
@@ -83,7 +84,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         data: {
           name,
           upc: typeof raw.upc === "string" && raw.upc.trim() ? raw.upc.replace(/\D/g, "") || null : null,
-          brand: typeof raw.brand === "string" && raw.brand.trim() ? raw.brand.trim() : null,
+          brand: normalizeBrand(raw.brand),
           category: category as never,
           condition: condition as never,
           msrp,

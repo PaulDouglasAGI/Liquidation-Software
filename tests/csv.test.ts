@@ -24,11 +24,16 @@ describe("toCsv", () => {
     expect(csv).toContain("'\tcmd");
   });
 
-  it("escapes a lone negative number too, rather than guessing intent", () => {
-    // We cannot tell "-5" (a number) from "-5+cmd" (a formula) without
-    // parsing, so the guard is applied uniformly. Spreadsheets show the
-    // apostrophe-prefixed value as text, which is the safe failure.
-    expect(toCsv(["n"], [["-5"]])).toContain("'-5");
+  it("leaves a plain negative number alone — it is an amount, not a formula", () => {
+    // Escaping these put a stray apostrophe through every P&L export.
+    expect(toCsv(["n"], [["-5"]])).toContain("\r\n-5\r\n");
+    expect(toCsv(["n"], [["-24.50"]])).toContain("\r\n-24.50\r\n");
+    expect(toCsv(["n"], [["-0.00"]])).toContain("\r\n-0.00\r\n");
+  });
+
+  it("still escapes text that only starts like a negative number", () => {
+    expect(toCsv(["n"], [["-2+3"]])).toContain("'-2+3");
+    expect(toCsv(["n"], [["-1-cmd|calc"]])).toContain("'-1-cmd");
   });
 
   it("renders null/undefined as empty cells", () => {
