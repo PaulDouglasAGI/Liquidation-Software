@@ -43,6 +43,17 @@ else
   [ -d node_modules/@prisma/client ] || echo "                  @prisma/client missing"
 fi
 
+# The generated client is not in git, so pulling a schema change leaves the old
+# one behind. The symptom is a runtime PrismaClientValidationError reading
+# "Unknown argument `<newField>`" — which looks like a code bug and is not one.
+SCHEMA_NOW=$(cksum prisma/schema.prisma 2>/dev/null | cksum)
+if [ "$(cat .devcontainer/.schema-generated 2>/dev/null)" = "$SCHEMA_NOW" ]; then
+  echo "  prisma client OK (generated from the current schema)"
+else
+  echo "  prisma client STALE vs prisma/schema.prisma"
+  echo "                  <-- run: npx prisma generate && npm run stop && npm run dev"
+fi
+
 echo
 echo "Environment"
 if [ -f .env ]; then

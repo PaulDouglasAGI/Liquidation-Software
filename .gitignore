@@ -45,5 +45,8 @@ next-env.d.ts
 
 !.env.example
 
-# devcontainer: per-machine marker so migrations are not re-applied each attach
+# devcontainer: per-machine markers, so migrations are not re-applied and the
+# Prisma client is not regenerated on every attach. They must NOT be committed
+# — the whole mechanism is a tracked file moving while the stamp does not.
 .devcontainer/.migrations-applied
+.devcontainer/.schema-generated

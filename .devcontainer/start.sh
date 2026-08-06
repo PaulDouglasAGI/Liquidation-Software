@@ -18,17 +18,42 @@ LOG=/tmp/liqops-dev.log
 # "Environment variable not found: DATABASE_URL".
 load_env
 
-# Already up (a reconnect, or the user started it by hand)? Leave it alone —
-# a second server would just fail to bind and muddy the logs.
-if server_responding "$PORT"; then
+# ── What, if anything, is actually out of date? ──────────────────────────
+#
+# Both checks compare a fingerprint of a file that IS in git against a stamp
+# that is NOT. That asymmetry is the whole point: `git pull` moves the tracked
+# file, the stamp stays put, and the mismatch is what says work is needed.
+# Everything below is skipped when they match, so a normal reconnect does
+# nothing at all.
+MIG_STAMP=".devcontainer/.migrations-applied"
+MIG_NOW=$(find prisma/migrations -name migration.sql -type f 2>/dev/null | sort | xargs cksum 2>/dev/null | cksum)
+SCHEMA_STAMP=".devcontainer/.schema-generated"
+SCHEMA_NOW=$(cksum prisma/schema.prisma 2>/dev/null | cksum)
+
+stamp_current() { [ -f "$1" ] && [ "$(cat "$1" 2>/dev/null)" = "$2" ]; }
+
+MIGRATIONS_STALE=0; stamp_current "$MIG_STAMP" "$MIG_NOW" || MIGRATIONS_STALE=1
+# The generated Prisma client lives in node_modules, which is not in git. Pull
+# a schema change and the OLD client is still there: the code asks for a new
+# field and Prisma answers "Unknown argument `pickupDate`". The code is right,
+# the client is behind. Nothing regenerates it on its own.
+CLIENT_STALE=0;     stamp_current "$SCHEMA_STAMP" "$SCHEMA_NOW" || CLIENT_STALE=1
+
+# Already up, and nothing has moved? Leave it alone — a second server would
+# just fail to bind and muddy the logs.
+if [ "$CLIENT_STALE" = 0 ] && [ "$MIGRATIONS_STALE" = 0 ] && server_responding "$PORT"; then
   ok "Dev server already running on port $PORT."
   exit 0
 fi
 
-# Listening but unhealthy: a stale server from before the config was fixed.
-# Replace it rather than reporting success on a broken process.
+# A running server holds the generated client in memory, so a regenerate alone
+# would not reach it. Restart is the only way to pick up a schema change.
 if port_listening "$PORT"; then
-  warn "Something is on port $PORT but returning errors — restarting it."
+  if [ "$CLIENT_STALE" = 1 ] || [ "$MIGRATIONS_STALE" = 1 ]; then
+    say "Schema changed since this server started — restarting it on the new one."
+  else
+    warn "Something is on port $PORT but returning errors — restarting it."
+  fi
   pkill -f "next dev" 2>/dev/null || true
   pkill -f "next-server" 2>/dev/null || true
   sleep 2
@@ -40,17 +65,23 @@ hold_lock
 if ! deps_ok; then
   warn "Dependencies are missing or incomplete — installing before starting."
   install_deps
-  npx prisma generate >/dev/null 2>&1 || true
+  # A rebuilt node_modules has no generated client at all, whatever the
+  # fingerprint said a moment ago.
+  CLIENT_STALE=1
+fi
+
+if [ "$CLIENT_STALE" = 1 ]; then
+  say "Regenerating the Prisma client…"
+  if npx prisma generate >/dev/null 2>&1; then
+    printf '%s' "$SCHEMA_NOW" > "$SCHEMA_STAMP"
+  else
+    warn "Could not regenerate the Prisma client — run: npx prisma generate"
+  fi
 fi
 
 bash .devcontainer/wait-for-db.sh || warn "Database not reachable — the app will error until it is."
 
-# Migrations only need applying when they have actually changed. Running
-# `prisma migrate deploy` on every attach costs several seconds and prints
-# noise for a no-op; a fingerprint of the migrations folder skips it.
-MIG_STAMP=".devcontainer/.migrations-applied"
-MIG_NOW=$(find prisma/migrations -name migration.sql -type f 2>/dev/null | sort | xargs cksum 2>/dev/null | cksum)
-if [ ! -f "$MIG_STAMP" ] || [ "$(cat "$MIG_STAMP" 2>/dev/null)" != "$MIG_NOW" ]; then
+if [ "$MIGRATIONS_STALE" = 1 ]; then
   say "Applying database migrations…"
   if npx prisma migrate deploy >/dev/null 2>&1; then
     printf '%s' "$MIG_NOW" > "$MIG_STAMP"
