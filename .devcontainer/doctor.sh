@@ -14,6 +14,19 @@ line() { printf '%s\n' "--------------------------------------------------------
 
 echo; line; echo " Liquidation Ops — diagnostics"; line
 
+echo "Machine"
+# Exit code 137 in the restart list below means the kernel killed the server
+# (out of memory); 143 means something asked it to stop. That distinction is
+# the whole diagnosis, so record what the box actually has.
+if command -v free >/dev/null 2>&1; then
+  free -m | awk 'NR==2 {printf "  memory      %s MB total, %s MB available\n", $2, $7}'
+fi
+echo "  cpus        $(nproc 2>/dev/null || echo '?')"
+if [ -r /sys/fs/cgroup/memory.max ]; then
+  lim=$(cat /sys/fs/cgroup/memory.max)
+  if [ "$lim" = "max" ]; then echo "  memory cap  none"; else echo "  memory cap  $((lim/1024/1024)) MB"; fi
+fi
+echo
 echo "Runtime"
 echo "  node        $(node -v 2>/dev/null || echo MISSING)"
 echo "  npm         $(npm -v 2>/dev/null || echo MISSING)"
@@ -68,6 +81,13 @@ else
   fi
 fi
 
+echo
+echo "Server restarts (137 = killed for memory, 143 = asked to stop)"
+if [ -f "$LOG" ] && grep -q "dev server exited" "$LOG"; then
+  grep "dev server exited" "$LOG" | tail -5 | sed 's/^/  /'
+else
+  echo "  none recorded"
+fi
 echo
 echo "Last dev-server output ($LOG)"
 if [ -f "$LOG" ]; then
