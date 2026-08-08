@@ -33,8 +33,27 @@ export default async function ShipPage() {
     take: PAGE_SIZE,
   });
 
-  const shippedToday = await prisma.order.count({
-    where: { shippedAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) } },
+  const startOfToday = new Date(new Date().setHours(0, 0, 0, 0));
+  const shippedToday = await prisma.order.count({ where: { shippedAt: { gte: startOfToday } } });
+
+  // Today's shipments and anything cancelled recently, so a mistake stays
+  // reachable. Both used to drop straight out of every screen the moment they
+  // were made: the order was gone, the goods were still on the shelf, and
+  // there was nowhere left to put it right.
+  const recent = await prisma.order.findMany({
+    where: {
+      OR: [
+        { status: "SHIPPED", shippedAt: { gte: startOfToday } },
+        { status: "CANCELLED", updatedAt: { gte: startOfToday } },
+      ],
+    },
+    select: {
+      id: true, orderNumber: true, status: true, buyerName: true,
+      carrier: true, trackingNumber: true, shippedAt: true,
+      items: { select: { sku: true }, orderBy: { sku: "asc" } },
+    },
+    orderBy: { updatedAt: "desc" },
+    take: 50,
   });
 
   return (
@@ -42,6 +61,16 @@ export default async function ShipPage() {
       shippedToday={shippedToday}
       totalOpen={totalOpen}
       overdueOpen={overdueOpen}
+      recent={recent.map((o) => ({
+        id: o.id,
+        orderNumber: o.orderNumber,
+        status: o.status,
+        buyerName: o.buyerName,
+        carrier: o.carrier,
+        trackingNumber: o.trackingNumber,
+        shippedAt: o.shippedAt?.toISOString() ?? null,
+        skus: o.items.map((i) => i.sku),
+      }))}
       orders={orders.map((o) => ({
         id: o.id,
         orderNumber: o.orderNumber,

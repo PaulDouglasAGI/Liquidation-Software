@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { apiUser, badRequest, notFound, parseMoney, serverError, unauthorized } from "@/lib/api";
-import { normalizeBrand } from "@/lib/parse";
+import { matchCondition, normalizeBrand } from "@/lib/parse";
 import { createItemBatches, isUniqueViolation, type ItemBatch } from "@/lib/skus";
 import { recalcPalletStatus } from "@/lib/pallets";
 import { getSettingNum } from "@/lib/settings";
@@ -48,35 +48,50 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const pctOfMsrp = await getSettingNum("defaultPricePct");
     const batches: ItemBatch[] = [];
-    const errors: string[] = [];
+    // Two different things: rows that did not import at all, and rows that did
+    // import but not exactly as written. Counting a capped quantity or a
+    // re-read condition as "skipped" told staff rows were missing when they
+    // were not.
+    const notes: string[] = [];
+    let skipped = 0;
 
     for (const [idx, raw] of rows.entries()) {
       const name = typeof raw.name === "string" ? raw.name.trim() : "";
       if (!name) {
-        errors.push(`Row ${idx + 1}: missing product name — skipped`);
+        skipped++;
+        notes.push(`Row ${idx + 1}: missing product name — skipped`);
         continue;
       }
       const qtyRaw = String(raw.qty ?? "").trim();
       const qtyNum = qtyRaw === "" ? 1 : parseInt(qtyRaw, 10);
       if (!Number.isFinite(qtyNum) || qtyNum <= 0) {
-        errors.push(`Row ${idx + 1}: quantity "${qtyRaw}" — skipped`);
+        skipped++;
+        notes.push(`Row ${idx + 1}: quantity "${qtyRaw}" — skipped`);
         continue;
       }
       const qty = Math.min(qtyNum, MAX_QTY_PER_ROW);
       if (qtyNum > MAX_QTY_PER_ROW) {
         // Silently capping made 200 units become 50 with no indication.
-        errors.push(`Row ${idx + 1}: quantity ${qtyNum} capped at ${MAX_QTY_PER_ROW}`);
+        notes.push(`Row ${idx + 1}: quantity ${qtyNum} capped at ${MAX_QTY_PER_ROW}`);
       }
       const msrp = parseMoney(raw.msrp);
       // Decimal(12,2) tops out below 10^10; one absurd value would otherwise
       // abort the entire import with a raw database error.
       if (msrp !== null && msrp >= 1e10) {
-        errors.push(`Row ${idx + 1}: MSRP ${msrp} is out of range — skipped`);
+        skipped++;
+        notes.push(`Row ${idx + 1}: MSRP ${msrp} is out of range — skipped`);
         continue;
       }
       const sellPrice = msrp !== null ? Math.round(msrp * pctOfMsrp) / 100 : null;
-      const conditionRaw = typeof raw.condition === "string" ? raw.condition.trim().toUpperCase().replace(/[\s-]+/g, "_") : "";
-      const condition = (CONDITIONS as readonly string[]).includes(conditionRaw) ? conditionRaw : "GOOD";
+      const match = matchCondition(raw.condition, CONDITIONS);
+      const condition = match.condition;
+      if (match.via === "synonym") {
+        notes.push(`Row ${idx + 1}: condition "${String(raw.condition).trim()}" read as ${condition}`);
+      } else if (match.via === "fallback") {
+        notes.push(
+          `Row ${idx + 1}: condition "${String(raw.condition).trim()}" not recognised — imported as ${condition}, check it`
+        );
+      }
       const category = (CATEGORIES as readonly string[]).includes(String(raw.category)) ? String(raw.category) : pallet.category;
 
       batches.push({
@@ -124,7 +139,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     if (created > 0) logActivity(user.name, "pallet.import", `${created} item(s) into ${pallet.palletCode}`);
-    return NextResponse.json({ ok: true, created, skipped: errors.length, errors: errors.slice(0, 20) });
+    return NextResponse.json({ ok: true, created, skipped, errors: notes.slice(0, 20) });
   } catch (e) {
     return serverError(e);
   }

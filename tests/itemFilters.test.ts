@@ -54,20 +54,50 @@ describe("buildItemWhere", () => {
     expect(buildItemWhere({ priceMin: "abc" }, 30, now).sellPrice).toBeUndefined();
   });
 
-  it("aging means listed and older than the threshold", () => {
-    const w = buildItemWhere({ aging: "1" }, 30, now);
+  const agingArms = (agingDays: number) => {
+    const w = buildItemWhere({ aging: "1" }, agingDays, now);
     const clause = (w.AND as Record<string, unknown>[])[0] as {
-      status: string;
-      dateListed: { lte: Date };
+      OR: Record<string, unknown>[];
     };
-    expect(clause.status).toBe("LISTED");
-    expect(clause.dateListed.lte.getTime()).toBe(now.getTime() - 30 * 86_400_000);
+    return clause.OR;
+  };
+
+  it("aging covers listed stock older than the threshold", () => {
+    const listedArm = agingArms(30)[0] as { status: string; dateListed: { lte: Date } };
+    expect(listedArm.status).toBe("LISTED");
+    expect(listedArm.dateListed.lte.getTime()).toBe(now.getTime() - 30 * 86_400_000);
   });
 
-  it("respects a custom aging threshold", () => {
-    const w = buildItemWhere({ aging: "1" }, 60, now);
-    const clause = (w.AND as Record<string, unknown>[])[0] as { dateListed: { lte: Date } };
-    expect(clause.dateListed.lte.getTime()).toBe(now.getTime() - 60 * 86_400_000);
+  it("aging also covers stock that was never listed at all", () => {
+    // The worst dead stock is the unit nobody ever got round to listing.
+    // Keying aging on dateListed alone left it out of every aging view.
+    const neverListedArm = agingArms(30)[1] as {
+      status: { in: string[] };
+      dateListed: null;
+      pallet: { is: { pickupDate: { lte: Date } } };
+    };
+    expect(neverListedArm.status.in).toContain("IN_STOCK");
+    expect(neverListedArm.dateListed).toBeNull();
+    // Ages from arrival, since there is no listing date to age from.
+    expect(neverListedArm.pallet.is.pickupDate.lte.getTime()).toBe(now.getTime() - 30 * 86_400_000);
+  });
+
+  it("aging never counts sold or scrapped stock as sitting on the shelf", () => {
+    const statuses = agingArms(30).flatMap((arm) => {
+      const a = arm as { status: string | { in: string[] } };
+      return typeof a.status === "string" ? [a.status] : a.status.in;
+    });
+    expect(statuses).not.toContain("SOLD");
+    expect(statuses).not.toContain("SCRAPPED");
+    expect(statuses).not.toContain("RETURNED");
+  });
+
+  it("respects a custom aging threshold on both arms", () => {
+    const arms = agingArms(60);
+    const listedArm = arms[0] as { dateListed: { lte: Date } };
+    const neverListedArm = arms[1] as { pallet: { is: { pickupDate: { lte: Date } } } };
+    expect(listedArm.dateListed.lte.getTime()).toBe(now.getTime() - 60 * 86_400_000);
+    expect(neverListedArm.pallet.is.pickupDate.lte.getTime()).toBe(now.getTime() - 60 * 86_400_000);
   });
 
   it("combines a search and an aging filter without either winning", () => {

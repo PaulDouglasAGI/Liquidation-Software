@@ -63,11 +63,25 @@ export function buildItemWhere(p: ItemFilterParams, agingDays: number, now = new
     };
   }
 
-  // Aging = listed more than N days ago and still unsold
+  // Aging = held more than N days and still unsold.
+  //
+  // Two ways stock goes stale, and only one of them involves a listing: a unit
+  // listed N days ago that nobody bought, and a unit that has sat since
+  // intake because nobody ever listed it. Keying this on dateListed alone hid
+  // the second kind entirely — the oldest, deadest stock in the building was
+  // the one thing no aging view could show.
   if (pick(p, "aging") === "1") {
+    const cutoff = new Date(now.getTime() - agingDays * 86_400_000);
     and.push({
-      status: "LISTED",
-      dateListed: { lte: new Date(now.getTime() - agingDays * 86_400_000) },
+      OR: [
+        { status: "LISTED", dateListed: { lte: cutoff } },
+        // Never listed: age from when it physically arrived.
+        {
+          status: { in: ["IN_STOCK", "RESERVED"] },
+          dateListed: null,
+          pallet: { is: { pickupDate: { lte: cutoff } } },
+        },
+      ],
     });
   }
 

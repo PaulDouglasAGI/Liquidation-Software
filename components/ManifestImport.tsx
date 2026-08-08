@@ -78,7 +78,16 @@ export default function ManifestImport({ palletId }: { palletId: string }) {
     const data = await res.json().catch(() => ({}));
     setBusy(false);
     if (res.ok) {
-      setResult(`Imported ${data.created} item(s)${data.skipped ? `, skipped ${data.skipped} row(s)` : ""}.`);
+      // The row-level notes were being collected server-side and thrown away
+      // here, so a capped quantity or an unrecognised condition landed in the
+      // data with nothing on screen to say it had been changed.
+      const notes: string[] = Array.isArray(data.errors) ? data.errors : [];
+      setResult(
+        [
+          `Imported ${data.created} item(s)${data.skipped ? `, skipped ${data.skipped} row(s)` : ""}.`,
+          ...notes,
+        ].join("\n")
+      );
       setRows([]);
       setMapping([]);
       router.refresh();
@@ -91,7 +100,7 @@ export default function ManifestImport({ palletId }: { palletId: string }) {
     return (
       <div className="flex items-center gap-2">
         <button className={btnCls} onClick={() => setOpen(true)}>Import manifest CSV</button>
-        {result ? <span className="text-[12px] text-ok">{result}</span> : null}
+        {result ? <span className="whitespace-pre-line text-[12px] text-ok">{result}</span> : null}
       </div>
     );
   }
@@ -155,7 +164,7 @@ export default function ManifestImport({ palletId }: { palletId: string }) {
           Pick the manifest CSV you downloaded from Liquidation.com / B-Stock. You&apos;ll map its columns before anything is imported.
         </div>
       )}
-      {result ? <div className="mt-2 text-[12px] text-amber-300">{result}</div> : null}
+      {result ? <div className="mt-2 whitespace-pre-line text-[12px] text-amber-300">{result}</div> : null}
     </div>
   );
 }

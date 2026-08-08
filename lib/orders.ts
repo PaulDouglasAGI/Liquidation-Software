@@ -62,7 +62,21 @@ export async function createOrder(input: NewOrderInput) {
         if (items.length !== input.itemIds.length) {
           throw new OrderConflict("Some selected items no longer exist");
         }
-        const taken = items.filter((i) => i.orderRecordId || i.status === "SOLD");
+        // A unit is unavailable while it is SOLD, or while it still sits on an
+        // order it has not physically come back from.
+        //
+        // The link to a past order is NOT itself a block. Treating it as one
+        // made every restocked return permanently unsellable — the unit showed
+        // IN_STOCK on the shelf but every sale failed with "already sold".
+        // Being back on the shelf (IN_STOCK/LISTED) is what frees it.
+        //
+        // Reselling does move the unit onto the new order, so the old order
+        // loses that line. That matches how P&L already treats a return — the
+        // unit stopped counting as revenue for the first sale the moment it
+        // came back — and is the lesser evil next to unsellable stock. A
+        // proper order-line table would keep both; this schema has only the FK.
+        const onShelf = (s: string) => s === "IN_STOCK" || s === "LISTED";
+        const taken = items.filter((i) => i.status === "SOLD" || (i.orderRecordId && !onShelf(i.status)));
         if (taken.length) {
           throw new OrderConflict(
             `Already sold or on another order: ${taken.map((i) => i.sku).join(", ")}`

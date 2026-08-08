@@ -44,6 +44,52 @@ const KNOWN_BRANDS = [
 ];
 const BRAND_BY_KEY = new Map(KNOWN_BRANDS.map((b) => [b.toLowerCase().replace(/[^a-z0-9]/g, ""), b]));
 
+/**
+ * Manifest wording for condition, mapped to the five grades we store.
+ *
+ * Suppliers write whatever they like, and an unrecognised value used to fall
+ * through to GOOD — so a pallet manifested as "Damaged" or "Salvage" imported
+ * as good stock, overstating both condition and value with nothing on screen
+ * to say so. Anything genuinely ambiguous grades DOWN: understating a unit
+ * costs a re-grade, overstating it ships a broken item to a buyer.
+ */
+const CONDITION_SYNONYMS: Record<string, string> = {
+  BRAND_NEW: "NEW", NIB: "NEW", NEW_IN_BOX: "NEW", SEALED: "NEW", NWT: "NEW",
+  UNOPENED: "NEW", FACTORY_SEALED: "NEW",
+  MINT: "LIKE_NEW", EXCELLENT: "LIKE_NEW", OPEN_BOX: "LIKE_NEW", NEW_OTHER: "LIKE_NEW",
+  REFURBISHED: "GOOD", REFURB: "GOOD", RENEWED: "GOOD", USED: "GOOD", PRE_OWNED: "GOOD",
+  SHELF_PULL: "GOOD", OVERSTOCK: "GOOD",
+  ACCEPTABLE: "FAIR", SCRATCH_AND_DENT: "FAIR", SCRATCH_DENT: "FAIR", CUSTOMER_RETURN: "FAIR",
+  CUSTOMER_RETURNS: "FAIR", USED_FAIR: "FAIR",
+  DAMAGED: "FOR_PARTS", SALVAGE: "FOR_PARTS", BROKEN: "FOR_PARTS", PARTS: "FOR_PARTS",
+  PARTS_ONLY: "FOR_PARTS", AS_IS: "FOR_PARTS", NON_FUNCTIONAL: "FOR_PARTS",
+  NOT_WORKING: "FOR_PARTS", DEFECTIVE: "FOR_PARTS", MISSING_PARTS: "FOR_PARTS",
+};
+
+export interface ConditionMatch {
+  /** The grade to store. */
+  condition: string;
+  /** How it was resolved — callers warn on "synonym" and "fallback". */
+  via: "exact" | "synonym" | "fallback";
+}
+
+/**
+ * Resolves a manifest condition string against the known grades.
+ * `valid` is the CONDITIONS enum; `fallback` is used when nothing matches.
+ */
+export function matchCondition(
+  raw: unknown,
+  valid: readonly string[],
+  fallback = "GOOD"
+): ConditionMatch {
+  const key = typeof raw === "string" ? raw.trim().toUpperCase().replace(/[\s/-]+/g, "_") : "";
+  if (!key) return { condition: fallback, via: "exact" }; // blank column, not a mis-read
+  if (valid.includes(key)) return { condition: key, via: "exact" };
+  const syn = CONDITION_SYNONYMS[key];
+  if (syn && valid.includes(syn)) return { condition: syn, via: "synonym" };
+  return { condition: fallback, via: "fallback" };
+}
+
 export function normalizeBrand(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
   const trimmed = raw.trim();

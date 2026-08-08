@@ -4,23 +4,10 @@ import { apiUser, badRequest, notFound, parseMoney, serverError, unauthorized } 
 import { logActivity } from "@/lib/activity";
 import { detectCarrier, splitEvenly } from "@/lib/fulfillmentMath";
 import { recalcPalletStatus } from "@/lib/pallets";
+import { estimateFees } from "@/lib/fees";
+import { getFeeRates } from "@/lib/settings";
 import { ORDER_STATUSES, type OrderStatusValue } from "@/lib/constants";
-
-/**
- * Which moves are legal from each state.
- *
- * Cancelling is deliberately absent from SHIPPED: the goods have physically
- * left with a tracking number, so "cancel" would silently erase a real sale
- * from P&L and put stock you no longer own back on the shelf. A shipped order
- * that comes back is a RETURN, handled on the item.
- */
-const ALLOWED: Record<OrderStatusValue, OrderStatusValue[]> = {
-  AWAITING_PICK: ["PICKED", "PACKED", "SHIPPED", "CANCELLED"],
-  PICKED: ["AWAITING_PICK", "PACKED", "SHIPPED", "CANCELLED"],
-  PACKED: ["PICKED", "SHIPPED", "CANCELLED"],
-  SHIPPED: [],
-  CANCELLED: [],
-};
+import { canMove, refusalReason } from "@/lib/orderStatus";
 
 /**
  * PATCH /api/orders/[id] — advance the pipeline or record shipping details.
@@ -41,10 +28,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const data: Record<string, unknown> = {};
     const now = new Date();
 
-    // A tracking number means it went out; treat it as a request to ship so
-    // staff don't have to click twice.
+    // A tracking number on a packed order means it went out; treat it as a
+    // request to ship so staff don't have to click twice.
+    //
+    // Only from PACKED, though. The tracking box sits on every row of the
+    // queue, so pasting into the wrong one used to ship an order that had not
+    // been picked or packed — one keystroke, no confirmation, straight past
+    // both checkpoints. On an unpacked order the number is now just recorded,
+    // and shipping stays an explicit act.
     const tracking = typeof b.trackingNumber === "string" ? b.trackingNumber.trim() : null;
-    const wantsShip = Boolean(tracking) && current !== "SHIPPED";
+    const wantsShip = Boolean(tracking) && current === "PACKED";
     const wantedStatus: string | null =
       typeof b.status === "string" ? b.status : wantsShip ? "SHIPPED" : null;
 
@@ -54,17 +47,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
       const next = wantedStatus as OrderStatusValue;
       if (next !== current) {
-        if (!ALLOWED[current].includes(next)) {
-          return badRequest(
-            current === "SHIPPED"
-              ? "This order has already shipped. Record a return on the item instead of cancelling it."
-              : `Cannot move an order from ${current} to ${next}`
-          );
-        }
+        if (!canMove(current, next)) return badRequest(refusalReason(current, next));
         data.status = next;
         if (next === "PICKED" && !order.pickedAt) data.pickedAt = now;
         if (next === "PACKED" && !order.packedAt) data.packedAt = now;
         if (next === "SHIPPED" && !order.shippedAt) data.shippedAt = now;
+        // Undoing a step clears its timestamp, so "shipped today" and the
+        // pick/pack timings count what actually happened rather than what was
+        // briefly mis-clicked.
+        if (current === "SHIPPED" && next !== "SHIPPED") data.shippedAt = null;
+        if (next === "PICKED" || next === "AWAITING_PICK") data.packedAt = null;
+        if (next === "AWAITING_PICK") data.pickedAt = null;
       }
     }
 
@@ -83,18 +76,52 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const shippingCost = data.shippingCost as number | null | undefined;
     const cancelling = data.status === "CANCELLED";
+    const reopening = current === "CANCELLED" && data.status != null;
+
+    // Reopening has to re-claim the goods, and someone may have sold them in
+    // the meantime. Say which ones rather than silently double-selling.
+    if (reopening) {
+      const stolen = order.items.filter((i) => i.status === "SOLD" || i.lotId);
+      if (stolen.length) {
+        return badRequest(
+          `Cannot reopen — these have since been sold or lotted elsewhere: ${stolen
+            .map((i) => i.sku)
+            .join(", ")}`
+        );
+      }
+    }
 
     const updated = await prisma.$transaction(async (tx) => {
       const o = await tx.order.update({ where: { id }, data });
 
-      if (cancelling) {
+      if (reopening) {
+        // Put the sale back on every line exactly as cancelling took it off.
+        const rates = await getFeeRates();
+        for (const item of order.items) {
+          const soldPrice = item.sellPrice?.toNumber() ?? null;
+          await tx.item.update({
+            where: { id: item.id },
+            data: {
+              status: "SOLD",
+              dateSold: o.soldAt ?? now,
+              soldPrice,
+              feesAmount: estimateFees(soldPrice, o.platform ?? item.platform, rates),
+            },
+          });
+        }
+      } else if (cancelling) {
         // Release the goods AND scrub the dead sale. Leaving feesAmount or
         // shippingCost behind would charge this cancelled order's costs
         // against whatever the item sells for next.
+        //
+        // orderRecordId deliberately survives: it is what lets the order be
+        // reopened later, and availability is decided by shelf status, not by
+        // the link. Nulling it left a cancelled order with no lines at all,
+        // so an accidental cancel could never be undone.
         const listed = order.items.filter((i) => i.dateListed).map((i) => i.id);
         const unlisted = order.items.filter((i) => !i.dateListed).map((i) => i.id);
         const clear = {
-          orderRecordId: null, orderId: null, dateSold: null,
+          orderId: null, dateSold: null,
           soldPrice: null, feesAmount: null, shippingCost: null,
         };
         // Restore what each item actually was before the sale — blanket

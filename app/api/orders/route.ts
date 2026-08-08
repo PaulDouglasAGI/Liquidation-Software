@@ -38,9 +38,27 @@ export async function POST(req: NextRequest) {
     const itemIds: string[] = Array.isArray(b?.itemIds) ? b.itemIds.filter((x: unknown) => typeof x === "string") : [];
     if (itemIds.length === 0) return badRequest("Select at least one item");
 
+    // externalId is unique, and a cancelled order keeps its marketplace id, so
+    // re-entering a sale after a mistaken cancel used to 500 with a raw
+    // constraint dump. Point at the order that holds it instead.
+    const externalId = typeof b.externalId === "string" ? b.externalId.trim() || null : null;
+    if (externalId) {
+      const clash = await prisma.order.findUnique({
+        where: { externalId },
+        select: { orderNumber: true, status: true },
+      });
+      if (clash) {
+        return badRequest(
+          clash.status === "CANCELLED"
+            ? `Order ${externalId} is on ${clash.orderNumber}, which was cancelled. Reopen it instead of re-entering the sale.`
+            : `Order ${externalId} is already recorded as ${clash.orderNumber}.`
+        );
+      }
+    }
+
     const order = await createOrder({
       itemIds,
-      externalId: typeof b.externalId === "string" ? b.externalId.trim() || null : null,
+      externalId,
       platform: typeof b.platform === "string" ? b.platform : null,
       buyerName: typeof b.buyerName === "string" ? b.buyerName.trim() || null : null,
       shipTo: b.shipTo ?? undefined,

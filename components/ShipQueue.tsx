@@ -35,10 +35,22 @@ const URGENCY_TEXT: Record<Urgency, string> = {
   late: "LATE", today: "Today", soon: "Tomorrow", ok: "", none: "—",
 };
 
+interface RecentRow {
+  id: string;
+  orderNumber: string;
+  status: string;
+  buyerName: string | null;
+  carrier: string | null;
+  trackingNumber: string | null;
+  shippedAt: string | null;
+  skus: string[];
+}
+
 export default function ShipQueue({
-  orders, shippedToday, totalOpen, overdueOpen,
+  orders, shippedToday, totalOpen, overdueOpen, recent = [],
 }: {
   orders: OrderRow[]; shippedToday: number; totalOpen: number; overdueOpen: number;
+  recent?: RecentRow[];
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -238,22 +250,48 @@ export default function ShipQueue({
                     Mark packed
                   </button>
                 ) : null}
+                {/* Every forward step gets a way back. The API has always
+                    allowed these moves; with no button for them, a step
+                    ticked early could only be undone from a database client. */}
+                {o.status === "PICKED" || o.status === "PACKED" ? (
+                  <button
+                    className={btnCls}
+                    disabled={busy === o.id}
+                    title="Put this order back a step"
+                    onClick={() => void patch(o.id, { status: o.status === "PACKED" ? "PICKED" : "AWAITING_PICK" })}
+                  >
+                    Undo {o.status === "PACKED" ? "pack" : "pick"}
+                  </button>
+                ) : null}
 
                 <input
                   className={inputNarrowCls + " w-56"}
                   placeholder="Scan or paste tracking number"
                   value={tracking[o.id] ?? o.trackingNumber ?? ""}
                   onChange={(e) => setTracking((t) => ({ ...t, [o.id]: e.target.value }))}
+                  // Enter records the number and nothing else. Passing the
+                  // current status explicitly keeps the server's
+                  // tracking-implies-shipped shortcut from firing, so a
+                  // scanner that emits a trailing newline into the wrong row
+                  // cannot ship an order on its own.
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && (tracking[o.id] ?? "").trim()) {
-                      void patch(o.id, { trackingNumber: tracking[o.id].trim() });
+                      void patch(o.id, { status: o.status, trackingNumber: tracking[o.id].trim() });
                     }
                   }}
                 />
+                {/* Shipping is the one step that books revenue and empties the
+                    shelf, so it is the one that asks first — the cheap,
+                    reversible actions around it do not need to. */}
                 <button
                   className={btnPrimaryCls}
                   disabled={busy === o.id || !(tracking[o.id] ?? o.trackingNumber ?? "").trim()}
-                  onClick={() => void patch(o.id, { trackingNumber: (tracking[o.id] ?? o.trackingNumber ?? "").trim() })}
+                  onClick={() => {
+                    const t = (tracking[o.id] ?? o.trackingNumber ?? "").trim();
+                    if (confirm(`Mark ${o.orderNumber} shipped with tracking ${t}?`)) {
+                      void patch(o.id, { status: "SHIPPED", trackingNumber: t });
+                    }
+                  }}
                 >
                   Mark shipped
                 </button>
@@ -276,6 +314,49 @@ export default function ShipQueue({
           );
         })}
       </div>
+
+      {recent.length > 0 ? (
+        <div className={panelCls}>
+          <div className="border-b border-edge px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
+            Shipped &amp; cancelled today — undo a mistake here
+          </div>
+          <table className="w-full text-[13px]">
+            <tbody>
+              {recent.map((r) => (
+                <tr key={r.id} className="hover:bg-raised/60">
+                  <td className={`${tdCls} ${monoCls} w-32`}>{r.orderNumber}</td>
+                  <td className={`${tdCls} w-24 text-[11px] uppercase tracking-wider text-muted`}>{label(r.status)}</td>
+                  <td className={tdCls}>
+                    <div className="truncate">{r.buyerName ?? "—"}</div>
+                  </td>
+                  <td className={`${tdCls} ${monoCls} w-56 truncate`}>{r.skus.join(", ")}</td>
+                  <td className={`${tdCls} ${monoCls} w-52 truncate`}>
+                    {r.trackingNumber ? `${r.carrier ?? ""} ${r.trackingNumber}`.trim() : "—"}
+                  </td>
+                  <td className={`${tdCls} w-28 text-right`}>
+                    <button
+                      className={btnCls}
+                      disabled={busy === r.id}
+                      title={
+                        r.status === "SHIPPED"
+                          ? "Put this back in the queue as packed"
+                          : "Reopen this order and re-claim its items"
+                      }
+                      onClick={() => {
+                        const next = r.status === "SHIPPED" ? "PACKED" : "AWAITING_PICK";
+                        const what = r.status === "SHIPPED" ? "Undo the shipment on" : "Reopen";
+                        if (confirm(`${what} ${r.orderNumber}?`)) void patch(r.id, { status: next });
+                      }}
+                    >
+                      {r.status === "SHIPPED" ? "Undo ship" : "Reopen"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
     </div>
   );
 }
