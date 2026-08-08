@@ -14,11 +14,24 @@ export default async function PackingSlipPage({ params }: { params: Promise<{ id
   const { id } = await params;
   const order = await prisma.order.findUnique({
     where: { id },
-    include: { items: { select: { sku: true, name: true, soldPrice: true, storageLocation: true }, orderBy: { sku: "asc" } } },
+    // Lines, not items: this slip has to keep saying what went in the box even
+    // after a unit comes back and is resold onto someone else's order.
+    include: {
+      lines: {
+        select: { sku: true, name: true, soldPrice: true, item: { select: { storageLocation: true } } },
+        orderBy: { sku: "asc" },
+      },
+    },
   });
   if (!order) notFound();
 
-  const total = order.items.reduce((s, i) => s + (num(i.soldPrice) ?? 0), 0);
+  const lines = order.lines.map((l) => ({
+    sku: l.sku,
+    name: l.name,
+    soldPrice: l.soldPrice,
+    storageLocation: l.item?.storageLocation ?? null,
+  }));
+  const total = lines.reduce((s, i) => s + (num(i.soldPrice) ?? 0), 0);
   const ship = [order.shipToName, order.shipToLine1, order.shipToLine2,
     [order.shipToCity, order.shipToState, order.shipToPostal].filter(Boolean).join(", "),
     order.shipToCountry].filter(Boolean);
@@ -65,7 +78,7 @@ export default async function PackingSlipPage({ params }: { params: Promise<{ id
             </tr>
           </thead>
           <tbody>
-            {order.items.map((i) => (
+            {lines.map((i) => (
               <tr key={i.sku} className="border-b border-gray-300">
                 <td className="py-1 font-mono text-xs">{i.sku}</td>
                 <td className="py-1">{i.name}</td>
@@ -75,7 +88,7 @@ export default async function PackingSlipPage({ params }: { params: Promise<{ id
           </tbody>
           <tfoot>
             <tr className="font-semibold">
-              <td className="py-2" colSpan={2}>Total ({order.items.length} item{order.items.length === 1 ? "" : "s"})</td>
+              <td className="py-2" colSpan={2}>Total ({lines.length} item{lines.length === 1 ? "" : "s"})</td>
               <td className="py-2 text-right">{money(total)}</td>
             </tr>
           </tfoot>

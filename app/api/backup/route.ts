@@ -12,7 +12,7 @@ export async function GET() {
   if (!(await apiUser())) return unauthorized();
 
   const [pallets, items, expenses, supplierPurchases, settings, templates, locations, users,
-         orders, lots, countSessions, countScans, savedViews, laborEntries] =
+         orders, lots, countSessions, countScans, savedViews, laborEntries, orderLines] =
     await Promise.all([
       prisma.pallet.findMany({ orderBy: { palletCode: "asc" } }),
       prisma.item.findMany({ orderBy: { sku: "asc" } }),
@@ -32,11 +32,15 @@ export async function GET() {
       // v8. Hours are typed in by hand and exist nowhere else — leaving them
       // out would make a restore quietly erase every labor-derived metric.
       prisma.laborEntry.findMany({ orderBy: { date: "asc" } }),
+      // v9. What each order actually contained. Item.orderRecordId only points
+      // at the order holding a unit right now, so a backup without these loses
+      // the contents of every order a returned unit was later resold off.
+      prisma.orderLine.findMany({ orderBy: { createdAt: "asc" } }),
     ]);
 
   const backup = {
     app: "liquidation-ops",
-    version: 4,
+    version: 5,
     exportedAt: new Date().toISOString(),
     counts: {
       pallets: pallets.length, items: items.length, expenses: expenses.length,
@@ -59,6 +63,7 @@ export async function GET() {
     countScans: toPlain(countScans),
     savedViews: toPlain(savedViews),
     laborEntries: toPlain(laborEntries),
+    orderLines: toPlain(orderLines),
   };
 
   return new Response(JSON.stringify(backup, null, 2), {

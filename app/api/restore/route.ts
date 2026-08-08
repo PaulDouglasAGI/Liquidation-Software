@@ -40,6 +40,9 @@ export async function POST(req: NextRequest) {
     const lots = asArray(b.lots);
     const countSessions = asArray(b.countSessions);
     const countScans = asArray(b.countScans);
+    // v9. Older backups have none; the fallback below rebuilds them from items
+    // so an upgrade from an old file does not restore empty packing slips.
+    const orderLines = asArray(b.orderLines);
     const savedViews = asArray(b.savedViews);
     // v8. Absent from older backups, which just means no hours to restore.
     const laborEntries = asArray(b.laborEntries);
@@ -52,6 +55,7 @@ export async function POST(req: NextRequest) {
     // than letting the whole restore die on a foreign-key violation.
     const orderIds = new Set(orders.map((o) => String(o.id)));
     const lotIds = new Set(lots.map((l) => String(l.id)));
+    const itemIds = new Set(items.map((i) => String(i.id)));
     let droppedRefs = 0;
     for (const it of items) {
       if (it.orderRecordId && !orderIds.has(String(it.orderRecordId))) {
@@ -87,6 +91,7 @@ export async function POST(req: NextRequest) {
     await prisma.$transaction(
       async (tx) => {
         // Delete children before parents; recreate in the reverse order.
+        await tx.orderLine.deleteMany();
         await tx.countScan.deleteMany();
         await tx.countSession.deleteMany();
         await tx.laborEntry.deleteMany();
@@ -102,6 +107,27 @@ export async function POST(req: NextRequest) {
         if (orders.length) await tx.order.createMany({ data: orders as unknown as Prisma.OrderCreateManyInput[] });
         if (lots.length) await tx.lot.createMany({ data: lots as unknown as Prisma.LotCreateManyInput[] });
         if (items.length) await tx.item.createMany({ data: items as unknown as Prisma.ItemCreateManyInput[] });
+        // Lines reference both, so they go in after orders and items.
+        const restorableLines = orderLines.filter(
+          (l) => orderIds.has(String(l.orderId)) && (l.itemId == null || itemIds.has(String(l.itemId)))
+        );
+        if (restorableLines.length) {
+          await tx.orderLine.createMany({ data: restorableLines as unknown as Prisma.OrderLineCreateManyInput[] });
+        } else if (items.length) {
+          // Pre-v9 backup: reconstruct each order's contents from the items
+          // that point at it, exactly as the schema migration does.
+          const rebuilt = items
+            .filter((i) => i.orderRecordId && orderIds.has(String(i.orderRecordId)))
+            .map((i) => ({
+              orderId: String(i.orderRecordId),
+              itemId: String(i.id),
+              sku: String(i.sku),
+              name: String(i.name),
+              soldPrice: (i.soldPrice ?? null) as never,
+              feesAmount: (i.feesAmount ?? null) as never,
+            }));
+          if (rebuilt.length) await tx.orderLine.createMany({ data: rebuilt });
+        }
         if (restorableLabor.length) await tx.laborEntry.createMany({ data: restorableLabor as unknown as Prisma.LaborEntryCreateManyInput[] });
         if (countSessions.length) await tx.countSession.createMany({ data: countSessions as unknown as Prisma.CountSessionCreateManyInput[] });
         if (countScans.length) await tx.countScan.createMany({ data: countScans as unknown as Prisma.CountScanCreateManyInput[] });

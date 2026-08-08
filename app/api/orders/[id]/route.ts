@@ -4,6 +4,7 @@ import { apiUser, badRequest, notFound, parseMoney, serverError, unauthorized } 
 import { logActivity } from "@/lib/activity";
 import { detectCarrier, splitEvenly } from "@/lib/fulfillmentMath";
 import { recalcPalletStatus } from "@/lib/pallets";
+import { addOrderLine, isOnShelf, OrderConflict } from "@/lib/orders";
 import { estimateFees } from "@/lib/fees";
 import { getFeeRates } from "@/lib/settings";
 import { ORDER_STATUSES, type OrderStatusValue } from "@/lib/constants";
@@ -72,7 +73,38 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (b.shippingCost !== undefined) data.shippingCost = parseMoney(b.shippingCost);
     if (typeof b.notes === "string") data.notes = b.notes.trim() || null;
 
-    if (Object.keys(data).length === 0) return badRequest("Nothing to update");
+    // Line edits. The commonest mistake of all is the wrong unit on the order,
+    // and the only cure used to be cancelling the whole thing and starting
+    // again — which stranded the marketplace order id with it.
+    const ids = (v: unknown): string[] =>
+      Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.length > 0) : [];
+    const addIds = ids(b.addItemIds);
+    const removeIds = ids(b.removeItemIds);
+
+    if (addIds.length || removeIds.length) {
+      if (current === "SHIPPED") {
+        return badRequest("This order has already shipped — its contents are a record of what went in the box.");
+      }
+      if (current === "CANCELLED") {
+        return badRequest("Reopen this order before changing what is on it.");
+      }
+      const overlap = addIds.filter((x) => removeIds.includes(x));
+      if (overlap.length) return badRequest("The same item cannot be both added and removed");
+    }
+
+    if (removeIds.length) {
+      const onOrder = new Set(order.items.map((i) => i.id));
+      const strays = removeIds.filter((x) => !onOrder.has(x));
+      if (strays.length) return badRequest("Some of those items are not on this order");
+      if (removeIds.length === order.items.length && addIds.length === 0) {
+        // An order with no lines is invisible in the queue and unfulfillable.
+        return badRequest("That would empty the order — cancel it instead.");
+      }
+    }
+
+    if (Object.keys(data).length === 0 && addIds.length === 0 && removeIds.length === 0) {
+      return badRequest("Nothing to update");
+    }
 
     const shippingCost = data.shippingCost as number | null | undefined;
     const cancelling = data.status === "CANCELLED";
@@ -93,6 +125,51 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const updated = await prisma.$transaction(async (tx) => {
       const o = await tx.order.update({ where: { id }, data });
+
+      if (removeIds.length) {
+        // Taking a unit off an open order undoes its sale completely — it was
+        // never in the box, so it must not carry this order's price or fees
+        // into whatever it sells for next.
+        const removed = order.items.filter((i) => removeIds.includes(i.id));
+        for (const item of removed) {
+          await tx.item.update({
+            where: { id: item.id },
+            data: {
+              orderRecordId: null, orderId: null, dateSold: null,
+              soldPrice: null, feesAmount: null, shippingCost: null,
+              status: item.dateListed ? "LISTED" : "IN_STOCK",
+            },
+          });
+        }
+        // The line goes too: an open order's contents are still being decided,
+        // so a wrongly-added unit is a mistake rather than history.
+        await tx.orderLine.deleteMany({ where: { orderId: id, itemId: { in: removeIds } } });
+      }
+
+      if (addIds.length) {
+        const rates = await getFeeRates();
+        // Re-read inside the transaction so two clerks cannot both claim a unit.
+        const adding = await tx.item.findMany({ where: { id: { in: addIds } } });
+        if (adding.length !== addIds.length) throw new OrderConflict("Some of those items no longer exist");
+        const taken = adding.filter(
+          (i) => i.status === "SOLD" || i.lotId || (i.orderRecordId && i.orderRecordId !== id && !isOnShelf(i.status))
+        );
+        if (taken.length) {
+          throw new OrderConflict(`Already sold, lotted or on another order: ${taken.map((i) => i.sku).join(", ")}`);
+        }
+        for (const item of adding) {
+          const soldPrice = item.sellPrice?.toNumber() ?? null;
+          const fees = estimateFees(soldPrice, o.platform ?? item.platform, rates);
+          await tx.item.update({
+            where: { id: item.id },
+            data: {
+              orderRecordId: id, status: "SOLD", dateSold: o.soldAt ?? now,
+              soldPrice, platform: (o.platform as never) ?? item.platform, feesAmount: fees,
+            },
+          });
+          await addOrderLine(tx, id, item, soldPrice, fees);
+        }
+      }
 
       if (reopening) {
         // Put the sale back on every line exactly as cancelling took it off.
@@ -141,15 +218,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         }
       }
 
-      for (const palletId of new Set(order.items.map((i) => i.palletId))) {
-        await recalcPalletStatus(palletId, tx);
+      // Pallets touched by added items need recalculating too, not just the
+      // ones the order already held.
+      const palletIds = new Set(order.items.map((i) => i.palletId));
+      if (addIds.length) {
+        for (const p of await tx.item.findMany({ where: { id: { in: addIds } }, select: { palletId: true } })) {
+          palletIds.add(p.palletId);
+        }
       }
+      for (const palletId of palletIds) await recalcPalletStatus(palletId, tx);
       return o;
     }, { timeout: 30_000 });
 
     logActivity(user.name, "order.update", `${order.orderNumber}: ${data.status ?? "details"}`);
     return NextResponse.json({ ok: true, status: updated.status, carrier: updated.carrier });
   } catch (e) {
+    if (e instanceof OrderConflict) return badRequest(e.message);
     return serverError(e);
   }
 }

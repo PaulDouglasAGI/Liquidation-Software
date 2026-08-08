@@ -229,6 +229,24 @@ export default function ShipQueue({
                       </td>
                       <td className={tdCls}><div className="truncate">{i.name}</div></td>
                       <td className={`${tdCls} ${monoCls} text-right w-20`}>{money(i.soldPrice)}</td>
+                      <td className={`${tdCls} w-16 text-right`}>
+                        {/* The wrong unit on an order was the one mistake with
+                            no cure short of cancelling the whole thing. */}
+                        {o.items.length > 1 ? (
+                          <button
+                            className="text-[11px] text-muted hover:text-danger"
+                            disabled={busy === o.id}
+                            title="Take this line off the order and put the unit back in stock"
+                            onClick={() => {
+                              if (confirm(`Remove ${i.sku} from ${o.orderNumber}? It goes back into stock.`)) {
+                                void patch(o.id, { removeItemIds: [i.id] });
+                              }
+                            }}
+                          >
+                            remove
+                          </button>
+                        ) : null}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

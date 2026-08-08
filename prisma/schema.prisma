@@ -247,6 +247,7 @@ model Item {
   /// Set when the item has been folded into a multi-item lot listing.
   lotId           String?
   lot             Lot?            @relation(fields: [lotId], references: [id], onDelete: SetNull)
+  orderLines      OrderLine[]
   /// Local-buyer hold: who it is held for and until when.
   /// Reliable seller or a gamble. Tagged by hand at intake; null until judged.
   valueClass      ValueClass?
@@ -300,10 +301,39 @@ model Order {
   shippingCost   Decimal?    @db.Decimal(12, 2)
   notes          String?
   items          Item[]
+  lines          OrderLine[]
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
   @@index([status])
+}
+
+/// What actually went in the box, recorded per unit at the moment of sale.
+///
+/// Item.orderRecordId only ever points at the order that holds a unit RIGHT
+/// NOW, so it moves the instant a returned unit is resold — taking the line
+/// off the original order with it, and rewriting what a shipped order says it
+/// contained. A packing slip has to keep saying what was shipped.
+///
+/// Lines are editable while the order is open (a wrongly-added unit is a
+/// mistake, not history) and frozen once it ships. Price and name are copied,
+/// not joined, so a later re-price or rename cannot rewrite a past shipment.
+model OrderLine {
+  id         String   @id @default(cuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  /// Kept as SetNull rather than Cascade: deleting a unit from inventory must
+  /// not silently delete the line saying we shipped it to someone.
+  itemId     String?
+  item       Item?    @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  sku        String
+  name       String
+  soldPrice  Decimal? @db.Decimal(12, 2)
+  feesAmount Decimal? @db.Decimal(12, 2)
+  createdAt  DateTime @default(now())
+
+  @@unique([orderId, itemId])
+  @@index([itemId])
 }
 
 /// Several slow-moving items sold together as one listing.

@@ -12,6 +12,34 @@ type Db = Prisma.TransactionClient | typeof prisma;
 /** Raised when items cannot be sold — caller turns it into a 400. */
 export class OrderConflict extends Error {}
 
+/** A unit is available to sell when it is physically on the shelf. */
+export function isOnShelf(status: string): boolean {
+  return status === "IN_STOCK" || status === "LISTED";
+}
+
+/**
+ * Records what went in the box, copying sku/name/price rather than joining, so
+ * a later rename or re-price cannot rewrite a past shipment.
+ *
+ * Upserts: re-adding a unit that is already on the order is a double-click,
+ * not a second copy of the same physical thing.
+ */
+export async function addOrderLine(
+  db: Db,
+  orderId: string,
+  item: { id: string; sku: string; name: string },
+  // Decimal as well as number: fees may come straight off the item, where
+  // Prisma hands back a Decimal rather than a plain number.
+  soldPrice: Prisma.Decimal | number | null,
+  feesAmount: Prisma.Decimal | number | null
+) {
+  await db.orderLine.upsert({
+    where: { orderId_itemId: { orderId, itemId: item.id } },
+    create: { orderId, itemId: item.id, sku: item.sku, name: item.name, soldPrice, feesAmount },
+    update: { sku: item.sku, name: item.name, soldPrice, feesAmount },
+  });
+}
+
 /** Next internal order number for the year, e.g. ORD-2026-001. */
 export async function nextOrderNumber(db: Db = prisma): Promise<string> {
   const prefix = `ORD-${new Date().getFullYear()}-`;
@@ -75,8 +103,7 @@ export async function createOrder(input: NewOrderInput) {
         // unit stopped counting as revenue for the first sale the moment it
         // came back — and is the lesser evil next to unsellable stock. A
         // proper order-line table would keep both; this schema has only the FK.
-        const onShelf = (s: string) => s === "IN_STOCK" || s === "LISTED";
-        const taken = items.filter((i) => i.status === "SOLD" || (i.orderRecordId && !onShelf(i.status)));
+        const taken = items.filter((i) => i.status === "SOLD" || (i.orderRecordId && !isOnShelf(i.status)));
         if (taken.length) {
           throw new OrderConflict(
             `Already sold or on another order: ${taken.map((i) => i.sku).join(", ")}`
@@ -114,6 +141,7 @@ export async function createOrder(input: NewOrderInput) {
         for (const item of items) {
           const soldPrice =
             input.soldPrices?.[item.id] ?? item.soldPrice?.toNumber() ?? item.sellPrice?.toNumber() ?? null;
+          const fees = item.feesAmount ?? estimateFees(soldPrice, platform ?? item.platform, rates);
           await tx.item.update({
             where: { id: item.id },
             data: {
@@ -122,9 +150,10 @@ export async function createOrder(input: NewOrderInput) {
               dateSold: soldAt,
               soldPrice,
               platform: (platform as never) ?? item.platform,
-              feesAmount: item.feesAmount ?? estimateFees(soldPrice, platform ?? item.platform, rates),
+              feesAmount: fees,
             },
           });
+          await addOrderLine(tx, order.id, item, soldPrice, fees);
         }
         return order;
       }, { timeout: 30_000 });
