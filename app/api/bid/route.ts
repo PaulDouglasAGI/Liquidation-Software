@@ -4,6 +4,7 @@ import { computeInsights } from "@/lib/insights";
 import { getFeeRates } from "@/lib/settings";
 import { estimateBid, profitAtBid, type ManifestLine } from "@/lib/bidMath";
 import { CATEGORIES } from "@/lib/constants";
+import { parseMoney } from "@/lib/parse";
 
 /**
  * POST /api/bid — value a manifest before buying the pallet.
@@ -24,7 +25,9 @@ export async function POST(req: NextRequest) {
         ? l.category
         : "MIXED";
       const qty = parseInt(String(l.qty ?? 1), 10);
-      const msrp = parseFloat(String(l.msrp ?? ""));
+      // Manifest lines are pasted straight from a supplier sheet, commas,
+      // currency symbols and all.
+      const msrp = parseMoney(l.msrp) ?? NaN;
       return {
         name: typeof l.name === "string" ? l.name : "",
         category,
@@ -42,7 +45,7 @@ export async function POST(req: NextRequest) {
       b.assumptions ?? {}
     );
 
-    const askedBid = parseFloat(String(b.bid ?? ""));
+    const askedBid = parseMoney(b.bid) ?? NaN;
     const atBid = Number.isFinite(askedBid) ? profitAtBid(estimate, askedBid) : null;
 
     return NextResponse.json({ estimate, atBid });

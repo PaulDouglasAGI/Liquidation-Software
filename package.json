@@ -12,6 +12,7 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
+    "check:data": "vitest run --config vitest.live.config.ts --reporter=verbose",
     "setup": "bash scripts/setup.sh",
     "repair": "bash .devcontainer/repair.sh",
     "doctor": "bash .devcontainer/doctor.sh",

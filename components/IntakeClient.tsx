@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { inputCls, selectCls, btnCls, btnPrimaryCls, labelCls, monoCls, panelCls } from "@/components/ui";
 import { CATEGORIES, CONDITIONS, label } from "@/lib/constants";
+import { marginLabel } from "@/lib/format";
+import { parseMoney } from "@/lib/parse";
 import type { Html5Qrcode } from "html5-qrcode";
 import AiIdentify, { type AiSuggestion } from "@/components/AiIdentify";
 
@@ -128,10 +130,13 @@ export default function IntakeClient({
       setForm((f) => ({ ...f, [k]: e.target.value }));
 
   // ---- pricing preview ----
-  const msrpNum = parseFloat(form.msrp);
+  // parseMoney throughout, so the preview reads a typed price exactly the way
+  // the server will. parseFloat rejected "$8.99" as NaN and read "1,299.00"
+  // as 1, so the margin shown had nothing to do with the item being saved.
+  const msrpNum = parseMoney(form.msrp) ?? NaN;
   const autoPrice = Number.isFinite(msrpNum) ? Math.round(msrpNum * defaultPricePct) / 100 : null;
-  const effPrice = form.sellPrice !== "" ? parseFloat(form.sellPrice) : autoPrice;
-  const effCost = form.ourCost !== "" ? parseFloat(form.ourCost) : costEstimate;
+  const effPrice = form.sellPrice !== "" ? parseMoney(form.sellPrice) ?? NaN : autoPrice;
+  const effCost = form.ourCost !== "" ? parseMoney(form.ourCost) ?? 0 : costEstimate;
   const profit = effPrice !== null && Number.isFinite(effPrice) ? effPrice - effCost : null;
   const margin = profit !== null && effPrice ? (profit / effPrice) * 100 : null;
 
@@ -553,7 +558,7 @@ export default function IntakeClient({
         <div className="flex flex-col justify-end pb-1">
           {profit !== null && Number.isFinite(profit) ? (
             <div className={`${monoCls} text-right ${profit >= 0 ? "text-ok" : "text-danger"}`}>
-              {profit >= 0 ? "+" : ""}{profit.toFixed(2)} · {margin !== null ? margin.toFixed(0) : "—"}%
+              {profit >= 0 ? "+" : ""}{profit.toFixed(2)} · {marginLabel(margin, 0)}
             </div>
           ) : (
             <div className="text-right text-[12px] text-muted">margin —</div>

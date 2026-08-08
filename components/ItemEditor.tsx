@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { inputCls, inputNarrowCls, selectCls, selectNarrowCls, btnCls, btnPrimaryCls, btnDangerCls, labelCls, monoCls, panelCls } from "@/components/ui";
 import { CATEGORIES, CONDITIONS, DUD_REASONS, ITEM_STATUSES, PLATFORMS, VALUE_CLASSES, label } from "@/lib/constants";
-import { money, pct, dateStr } from "@/lib/format";
+import { money, dateStr, marginLabel } from "@/lib/format";
+import { parseMoney } from "@/lib/parse";
 import { estimateFees, netProfit, type FeeRates } from "@/lib/fees";
 
 export interface ItemData {
@@ -108,9 +109,14 @@ export default function ItemEditor({ item, locations, feeRates }: { item: ItemDa
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
       setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  // Live margin — gross, and net of the selected platform's estimated fees
-  const price = parseFloat(form.sellPrice);
-  const cost = parseFloat(form.ourCost) || 0;
+  // Live margin — gross, and net of the selected platform's estimated fees.
+  //
+  // parseMoney, the same parser the server uses. parseFloat disagreed with it
+  // on exactly the things people type into a price box: "$8.99" came back NaN
+  // so the margin blanked, and "1,299.00" came back 1 — the preview showed a
+  // catastrophic loss while the server correctly saved $1,299.
+  const price = parseMoney(form.sellPrice) ?? NaN;
+  const cost = parseMoney(form.ourCost) ?? 0;
   const profit = Number.isFinite(price) ? price - cost : null;
   const margin = profit !== null && price > 0 ? (profit / price) * 100 : null;
   const estFees = Number.isFinite(price) ? estimateFees(price, form.platform || "EBAY", feeRates) : null;
@@ -475,7 +481,7 @@ export default function ItemEditor({ item, locations, feeRates }: { item: ItemDa
             <div className="mt-2 flex justify-between border-t border-edge pt-2 text-[13px]">
               <span className="text-muted">Est. profit / margin</span>
               <span className={`${monoCls} ${profit !== null && profit >= 0 ? "text-ok" : "text-danger"}`}>
-                {profit !== null ? `${money(profit)} · ${pct(margin)}` : "—"}
+                {profit !== null ? `${money(profit)} · ${marginLabel(margin)}` : "—"}
               </span>
             </div>
             <div className="mt-1 flex justify-between text-[13px]">

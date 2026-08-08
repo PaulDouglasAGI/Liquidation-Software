@@ -1,6 +1,7 @@
 // Pure query-building from URL params — no DB access, so it stays unit-testable.
 import type { Prisma } from "@prisma/client";
 import { CATEGORIES, CONDITIONS, ITEM_STATUSES, PLATFORMS } from "./constants";
+import { parseMoney } from "./parse";
 
 export interface ItemFilterParams {
   [key: string]: string | string[] | undefined;
@@ -54,8 +55,10 @@ export function buildItemWhere(p: ItemFilterParams, agingDays: number, now = new
     };
   }
 
-  const priceMin = parseFloat(pick(p, "priceMin"));
-  const priceMax = parseFloat(pick(p, "priceMax"));
+  // parseMoney: a price filter typed as "1,200" was read as 1 and silently
+  // returned the wrong slice of inventory.
+  const priceMin = parseMoney(pick(p, "priceMin")) ?? NaN;
+  const priceMax = parseMoney(pick(p, "priceMax")) ?? NaN;
   if (Number.isFinite(priceMin) || Number.isFinite(priceMax)) {
     where.sellPrice = {
       ...(Number.isFinite(priceMin) ? { gte: priceMin } : {}),

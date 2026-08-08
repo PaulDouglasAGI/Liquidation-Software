@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { thCls, tdCls, monoCls, btnCls, panelCls, inputNarrowCls } from "@/components/ui";
 import { ITEM_STATUSES, label, STATUS_COLORS } from "@/lib/constants";
 import { money, daysSince } from "@/lib/format";
+import { parseMoney } from "@/lib/parse";
 
 export interface InvRow {
   id: string;
@@ -154,8 +155,9 @@ export default function InventoryTable({
   }
 
   function applyReprice() {
-    const v = parseFloat(repriceVal);
-    if (!Number.isFinite(v) || v <= 0) {
+    // parseMoney, so "$5" and "1,200" mean here what they mean everywhere else.
+    const v = parseMoney(repriceVal);
+    if (v === null || v <= 0) {
       setMsg("Enter a valid number");
       return;
     }

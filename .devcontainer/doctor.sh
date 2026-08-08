@@ -122,5 +122,8 @@ elif ! server_responding 3000; then
   echo "  npm run dev         # start the server and watch for errors"
 else
   echo "  Everything looks healthy."
+  # Checks the data rather than the machine: whether orders, bundles, units
+  # and costs still agree with each other.
+  echo "  npm run check:data  # confirm the records still agree with each other"
 fi
 echo

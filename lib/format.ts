@@ -38,3 +38,20 @@ export function marginPct(sell: number | null | undefined, cost: number): number
   if (!sell || sell <= 0) return null;
   return ((sell - cost) / sell) * 100;
 }
+
+/**
+ * Margin as text, bounded so a below-cost price stays readable.
+ *
+ * Margin is a share of the SALE price, so as the price falls towards zero the
+ * percentage runs away: a $0.99 unit carrying $153 of allocated pallet cost is
+ * a mathematically correct -15,368%. Five-digit percentages tell you nothing
+ * the dollar figure beside them does not, and they made small prices look
+ * broken. Past ±999% the sign is the only real information left, so say that
+ * instead of printing the number.
+ */
+export function marginLabel(n: number | null | undefined, digits = 1): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return "—";
+  if (n > 999) return ">999%";
+  if (n < -999) return "way below cost";
+  return `${n.toFixed(digits)}%`;
+}
