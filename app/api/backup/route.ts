@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
-import { apiUser, unauthorized } from "@/lib/api";
+import { ownerOrResponse } from "@/lib/api";
+import { NextResponse } from "next/server";
 import { toPlain } from "@/lib/serialize";
 import { isCredentialKey } from "@/lib/credentials";
 
@@ -9,7 +10,12 @@ import { isCredentialKey } from "@/lib/credentials";
  * Item photo FILES are not embedded — back up the uploads directory alongside.
  */
 export async function GET() {
-  if (!(await apiUser())) return unauthorized();
+  // Owner only, to match restore. A backup is the whole book of business in
+  // one file — every pallet cost and sale price, every buyer's name and
+  // shipping address, every user's email. Any signed-in account could
+  // download it, so a temp with a login could walk off with the lot.
+  const owner = await ownerOrResponse();
+  if (owner instanceof NextResponse) return owner;
 
   const [pallets, items, expenses, supplierPurchases, settings, templates, locations, users,
          orders, lots, countSessions, countScans, savedViews, laborEntries, orderLines] =

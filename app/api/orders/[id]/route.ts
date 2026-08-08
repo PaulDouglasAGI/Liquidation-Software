@@ -110,6 +110,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const cancelling = data.status === "CANCELLED";
     const reopening = current === "CANCELLED" && data.status != null;
 
+    // An order raised by a bundle sale is derived from it, not the other way
+    // round. Cancelling it on its own left the bundle still marked SOLD while
+    // its units read as back in stock — two records disagreeing about the same
+    // three things on a shelf. Undoing the bundle sale handles both.
+    if (cancelling) {
+      const lotted = order.items.filter((i) => i.lotId);
+      if (lotted.length) {
+        const lot = await prisma.lot.findUnique({
+          where: { id: lotted[0].lotId! },
+          select: { lotCode: true },
+        });
+        return badRequest(
+          `These units belong to bundle ${lot?.lotCode ?? "?"}. Undo that bundle's sale instead of cancelling this order.`
+        );
+      }
+    }
+
     // Reopening has to re-claim the goods, and someone may have sold them in
     // the meantime. Say which ones rather than silently double-selling.
     if (reopening) {
@@ -137,7 +154,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             data: {
               orderRecordId: null, orderId: null, dateSold: null,
               soldPrice: null, feesAmount: null, shippingCost: null,
-              status: item.dateListed ? "LISTED" : "IN_STOCK",
+              // Still in a bundle means still spoken for, not back on the shelf.
+              status: item.lotId ? "RESERVED" : item.dateListed ? "LISTED" : "IN_STOCK",
             },
           });
         }
@@ -208,6 +226,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         }
         if (unlisted.length) {
           await tx.item.updateMany({ where: { id: { in: unlisted } }, data: { ...clear, status: "IN_STOCK" } });
+        }
+        // A unit still held in a bundle is not back on the open shelf.
+        const stillLotted = order.items.filter((i) => i.lotId).map((i) => i.id);
+        if (stillLotted.length) {
+          await tx.item.updateMany({ where: { id: { in: stillLotted } }, data: { status: "RESERVED" } });
         }
       } else if (shippingCost != null && order.items.length > 0) {
         // Allocate to the cent so per-item shipping sums exactly to what we
