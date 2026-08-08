@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { apiUser, badRequest, notFound, parseMoney, serverError, unauthorized } from "@/lib/api";
 import { matchCondition, normalizeBrand } from "@/lib/parse";
 import { createItemBatches, isUniqueViolation, type ItemBatch } from "@/lib/skus";
-import { recalcPalletStatus } from "@/lib/pallets";
+import { recalcPalletStatus, spreadPalletCost } from "@/lib/pallets";
 import { getSettingNum } from "@/lib/settings";
 import { CATEGORIES, CONDITIONS } from "@/lib/constants";
 import { logActivity } from "@/lib/activity";
@@ -118,16 +118,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           const n = await createItemBatches(id, batches, tx);
 
           // Spread pallet cost across items (manifest imports usually happen
-          // before per-item costs are known). SOLD items keep their booked
-          // cost — changing it would retroactively rewrite P&L margins.
-          const total = await tx.item.count({ where: { palletId: id } });
-          if (total > 0) {
-            const per = Math.round((pallet.totalCost.toNumber() / total) * 100) / 100;
-            await tx.item.updateMany({
-              where: { palletId: id, status: { not: "SOLD" } },
-              data: { ourCost: per },
-            });
-          }
+          // before per-item costs are known).
+          await spreadPalletCost(id, tx);
           await recalcPalletStatus(id, tx);
           return n;
         }, TX_OPTS);

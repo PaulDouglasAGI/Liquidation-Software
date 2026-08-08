@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { apiUser, badRequest, notFound, parseDate, parseMoney, serverError, unauthorized } from "@/lib/api";
+import { MAX_MEASURE, MAX_MONEY } from "@/lib/parse";
 import { recalcPalletStatus } from "@/lib/pallets";
 import { CATEGORIES, CONDITIONS, DUD_REASONS, ITEM_STATUSES, PLATFORMS, VALUE_CLASSES } from "@/lib/constants";
 import { toPlain } from "@/lib/serialize";
@@ -48,16 +49,16 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
     // Money fields: empty string clears the value, an unparseable or negative
     // value is a 400 — a typo must never silently null a stored price.
-    for (const [key, labelText] of [
-      ["msrp", "MSRP"],
-      ["sellPrice", "sell price"],
-      ["soldPrice", "sold price"],
-      ["feesAmount", "fees"],
-      ["shippingCost", "shipping cost"],
-      ["weightLbs", "weight"],
-      ["lengthIn", "length"],
-      ["widthIn", "width"],
-      ["heightIn", "height"],
+    for (const [key, labelText, ceiling] of [
+      ["msrp", "MSRP", MAX_MONEY],
+      ["sellPrice", "sell price", MAX_MONEY],
+      ["soldPrice", "sold price", MAX_MONEY],
+      ["feesAmount", "fees", MAX_MONEY],
+      ["shippingCost", "shipping cost", MAX_MONEY],
+      ["weightLbs", "weight", MAX_MEASURE],
+      ["lengthIn", "length", MAX_MEASURE],
+      ["widthIn", "width", MAX_MEASURE],
+      ["heightIn", "height", MAX_MEASURE],
     ] as const) {
       const raw = b[key];
       if (raw === undefined) continue;
@@ -67,6 +68,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       }
       const parsed = parseMoney(raw);
       if (parsed === null) return badRequest(`Invalid ${labelText} — enter a non-negative number`);
+      // A fat-fingered extra digit overflowed the column and came back as a
+      // 500 with the raw database query in the message.
+      if (parsed > ceiling) return badRequest(`That ${labelText} is too large — maximum is ${ceiling}`);
       data[key] = parsed;
     }
 
@@ -77,12 +81,21 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     }
     if (b.upc !== undefined) data.upc = strOrNull(b.upc)?.replace(/\D/g, "") || null;
     if (b.brand !== undefined) data.brand = strOrNull(b.brand);
-    if (b.category !== undefined && CATEGORIES.includes(b.category)) data.category = b.category;
-    if (b.condition !== undefined && CONDITIONS.includes(b.condition)) data.condition = b.condition;
+    // Say no to an unknown value rather than dropping it. Silently ignoring it
+    // returned 200 to someone who had just watched their edit not happen.
+    if (b.category !== undefined) {
+      if (!CATEGORIES.includes(b.category)) return badRequest("Invalid category");
+      data.category = b.category;
+    }
+    if (b.condition !== undefined) {
+      if (!CONDITIONS.includes(b.condition)) return badRequest("Invalid condition");
+      data.condition = b.condition;
+    }
     if (b.conditionNotes !== undefined) data.conditionNotes = strOrNull(b.conditionNotes);
     if (b.ourCost !== undefined) {
       const c = parseMoney(b.ourCost);
       if (c === null) return badRequest("Invalid cost — enter a non-negative number");
+      if (c > MAX_MONEY) return badRequest(`That cost is too large — maximum is ${MAX_MONEY}`);
       data.ourCost = c;
     }
     // Lot-performance tagging. valueClass separates stock we can bid against

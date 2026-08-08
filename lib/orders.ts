@@ -98,11 +98,8 @@ export async function createOrder(input: NewOrderInput) {
         // IN_STOCK on the shelf but every sale failed with "already sold".
         // Being back on the shelf (IN_STOCK/LISTED) is what frees it.
         //
-        // Reselling does move the unit onto the new order, so the old order
-        // loses that line. That matches how P&L already treats a return — the
-        // unit stopped counting as revenue for the first sale the moment it
-        // came back — and is the lesser evil next to unsellable stock. A
-        // proper order-line table would keep both; this schema has only the FK.
+        // Reselling moves the LINK to the new order; the original order keeps
+        // its OrderLine, so what it shipped still reads correctly.
         const taken = items.filter((i) => i.status === "SOLD" || (i.orderRecordId && !isOnShelf(i.status)));
         if (taken.length) {
           throw new OrderConflict(
@@ -166,6 +163,24 @@ export async function createOrder(input: NewOrderInput) {
 }
 
 /**
+ * Adds an already-sold unit to an order that exists, link and line together.
+ *
+ * The link alone is not enough: a multi-item marketplace order collapses onto
+ * one order here, and every unit after the first arrives through this path. A
+ * line-less unit is invisible on the packing slip, so the picker packs one
+ * item and the buyer is short the rest of their order.
+ */
+async function attachExistingItem(orderId: string, itemId: string, soldPrice?: number | null) {
+  await prisma.$transaction(async (tx) => {
+    const item = await tx.item.update({
+      where: { id: itemId },
+      data: { orderRecordId: orderId },
+    });
+    await addOrderLine(tx, orderId, item, soldPrice ?? item.soldPrice, item.feesAmount);
+  });
+}
+
+/**
  * Finds the order for a marketplace order id, or creates one and attaches the
  * item. Lets repeated syncs of a multi-item order collapse into one shipment
  * instead of one order per line.
@@ -186,10 +201,7 @@ export async function attachItemToExternalOrder(
     orderBy: { createdAt: "asc" },
   });
   if (existing) {
-    await prisma.item.update({
-      where: { id: itemId },
-      data: { orderRecordId: existing.id },
-    });
+    await attachExistingItem(existing.id, itemId, soldPrice);
     return existing;
   }
   try {
@@ -209,7 +221,7 @@ export async function attachItemToExternalOrder(
         orderBy: { createdAt: "asc" },
       });
       if (raced) {
-        await prisma.item.update({ where: { id: itemId }, data: { orderRecordId: raced.id } });
+        await attachExistingItem(raced.id, itemId, soldPrice);
         return raced;
       }
     }

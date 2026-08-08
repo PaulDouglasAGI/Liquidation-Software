@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ALLOWED_ORDER_MOVES, canMove, refusalReason } from "@/lib/orderStatus";
-import { ORDER_STATUSES, type OrderStatusValue } from "@/lib/constants";
+import { ALLOWED_LOT_MOVES, ALLOWED_ORDER_MOVES, canMove, canMoveLot, refusalReason } from "@/lib/orderStatus";
+import { ORDER_STATUSES, LOT_STATUSES, type OrderStatusValue } from "@/lib/constants";
 
 describe("order state machine — a warehouse mis-clicks, and must be able to take it back", () => {
   it("walks the normal path forwards", () => {
@@ -53,6 +53,26 @@ describe("order state machine — a warehouse mis-clicks, and must be able to ta
     for (const s of ORDER_STATUSES) {
       if (s === "AWAITING_PICK") continue; // where orders start
       expect(reachable.has(s as OrderStatusValue)).toBe(true);
+    }
+  });
+});
+
+describe("bundle state machine", () => {
+  it("lets a mistaken bundle sale be undone", () => {
+    // One click settles every unit in the bundle; it has to be reversible.
+    expect(canMoveLot("SOLD", "LISTED")).toBe(true);
+  });
+
+  it("keeps CANCELLED terminal, since breaking up a bundle loses nothing", () => {
+    // Every unit goes back to stock untouched and the bundle is two clicks to
+    // rebuild, so there is no state worth recovering.
+    expect(ALLOWED_LOT_MOVES.CANCELLED).toEqual([]);
+  });
+
+  it("covers every lot status", () => {
+    for (const s of LOT_STATUSES) expect(ALLOWED_LOT_MOVES[s]).toBeDefined();
+    for (const dest of Object.values(ALLOWED_LOT_MOVES).flat()) {
+      expect(LOT_STATUSES as readonly string[]).toContain(dest);
     }
   });
 });

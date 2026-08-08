@@ -5,7 +5,7 @@ import { recalcPalletStatus } from "@/lib/pallets";
 import { logActivity } from "@/lib/activity";
 import { estimateFees } from "@/lib/fees";
 import { getFeeRates } from "@/lib/settings";
-import { nextOrderNumber } from "@/lib/orders";
+import { addOrderLine, nextOrderNumber } from "@/lib/orders";
 import { shipByFrom } from "@/lib/fulfillmentMath";
 import { DUD_REASONS, VALUE_CLASSES } from "@/lib/constants";
 
@@ -93,6 +93,9 @@ export async function POST(req: NextRequest) {
                 orderRecordId: order.id,
               },
             });
+            // Record the line as well as the link. Attaching by orderRecordId
+            // alone leaves the order with nothing to print on a packing slip.
+            await addOrderLine(tx, order.id, item, soldPrice, feesAmount);
             updated++;
           }
           orderNumber = order.orderNumber;

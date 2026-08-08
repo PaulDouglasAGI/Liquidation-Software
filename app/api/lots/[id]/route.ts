@@ -3,21 +3,12 @@ import { prisma } from "@/lib/db";
 import { apiUser, badRequest, notFound, parseMoney, serverError, unauthorized } from "@/lib/api";
 import { estimateFees } from "@/lib/fees";
 import { getFeeRates } from "@/lib/settings";
-import { splitByWeight } from "@/lib/fulfillmentMath";
+import { shipByFrom, splitByWeight } from "@/lib/fulfillmentMath";
 import { recalcPalletStatus } from "@/lib/pallets";
+import { addOrderLine, nextOrderNumber } from "@/lib/orders";
 import { logActivity } from "@/lib/activity";
 import { LOT_STATUSES, type LotStatusValue } from "@/lib/constants";
-
-/**
- * A sold lot is a closed sale. Reopening it would resurrect every item as
- * sellable stock and silently erase the revenue from P&L, so SOLD is terminal.
- */
-const ALLOWED: Record<LotStatusValue, LotStatusValue[]> = {
-  DRAFT: ["LISTED", "SOLD", "CANCELLED"],
-  LISTED: ["DRAFT", "SOLD", "CANCELLED"],
-  SOLD: [],
-  CANCELLED: [],
-};
+import { canMoveLot } from "@/lib/orderStatus";
 
 /**
  * PATCH /api/lots/[id] — { status, soldPrice?, platform? }
@@ -40,10 +31,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const current = lot.status as LotStatusValue;
     const next = status as LotStatusValue;
-    if (next !== current && !ALLOWED[current].includes(next)) {
+    if (!canMoveLot(current, next)) {
       return badRequest(
         current === "SOLD"
-          ? "This lot has already sold. Record a return on the individual items instead."
+          ? "Undo the sale first (set the bundle back to Listed), or record a return on the individual items."
           : `Cannot move a lot from ${current} to ${next}`
       );
     }
@@ -63,8 +54,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const shares = splitByWeight(soldPrice, lot.items.map((i) => i.sellPrice?.toNumber() ?? 0));
 
       await prisma.$transaction(async (tx) => {
+        // A sold bundle still has to be picked, packed and posted. Without an
+        // order it appeared on no pick list and no packing slip, so the buyer
+        // had paid and nothing anywhere told anyone to ship it.
+        const order = await tx.order.create({
+          data: {
+            orderNumber: await nextOrderNumber(tx),
+            platform: platform as never,
+            buyerName: typeof b.buyerName === "string" ? b.buyerName.trim() || null : null,
+            soldAt: now,
+            shipByDate: shipByFrom(now),
+            notes: `Bundle ${lot.lotCode}`,
+          },
+        });
         for (const [idx, item] of lot.items.entries()) {
           const share = shares[idx];
+          const fees = estimateFees(share, platform, rates);
           await tx.item.update({
             where: { id: item.id },
             data: {
@@ -72,9 +77,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
               soldPrice: share,
               platform: platform as never,
               dateSold: now,
-              feesAmount: estimateFees(share, platform, rates),
+              feesAmount: fees,
+              orderRecordId: order.id,
             },
           });
+          await addOrderLine(tx, order.id, item, share, fees);
         }
         await tx.lot.update({
           where: { id },
@@ -85,6 +92,42 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
       logActivity(user.name, "lot.sold", `${lot.lotCode} sold for ${soldPrice}`);
       return NextResponse.json({ ok: true, status: next, itemsSettled: lot.items.length });
+    }
+
+    // Undoing a bundle sale: hand every unit back to the bundle exactly as it
+    // was, and drop the shipment that was raised for it.
+    if (current === "SOLD" && next === "LISTED") {
+      const orderIds = [...new Set(lot.items.map((i) => i.orderRecordId).filter((x): x is string => !!x))];
+      const shipped = await prisma.order.findFirst({
+        where: { id: { in: orderIds }, status: "SHIPPED" },
+        select: { orderNumber: true },
+      });
+      if (shipped) {
+        return badRequest(
+          `${shipped.orderNumber} has already shipped. Undo that shipment first, or record a return on the items.`
+        );
+      }
+      await prisma.$transaction(async (tx) => {
+        await tx.item.updateMany({
+          where: { id: { in: lot.items.map((i) => i.id) } },
+          // Back to RESERVED: the units never left the bundle, they were only
+          // settled against a sale that turned out not to have happened.
+          data: {
+            status: "RESERVED", soldPrice: null, dateSold: null,
+            feesAmount: null, shippingCost: null, orderRecordId: null,
+          },
+        });
+        // The order existed only to ship this bundle, so it goes with the sale
+        // rather than lingering in the queue with nothing to pick.
+        if (orderIds.length) await tx.order.deleteMany({ where: { id: { in: orderIds } } });
+        await tx.lot.update({
+          where: { id },
+          data: { status: "LISTED", soldPrice: null, dateSold: null },
+        });
+        for (const palletId of palletIds) await recalcPalletStatus(palletId, tx);
+      }, { timeout: 30_000 });
+      logActivity(user.name, "lot.unsold", `${lot.lotCode} sale undone`);
+      return NextResponse.json({ ok: true, status: next });
     }
 
     if (next === "CANCELLED") {

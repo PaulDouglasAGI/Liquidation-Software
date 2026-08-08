@@ -21,16 +21,27 @@ export default async function PackingSlipPage({ params }: { params: Promise<{ id
         select: { sku: true, name: true, soldPrice: true, item: { select: { storageLocation: true } } },
         orderBy: { sku: "asc" },
       },
+      // Fallback source only — see below.
+      items: {
+        select: { sku: true, name: true, soldPrice: true, storageLocation: true },
+        orderBy: { sku: "asc" },
+      },
     },
   });
   if (!order) notFound();
 
-  const lines = order.lines.map((l) => ({
-    sku: l.sku,
-    name: l.name,
-    soldPrice: l.soldPrice,
-    storageLocation: l.item?.storageLocation ?? null,
-  }));
+  // An order that somehow has units but no lines still has to print. A blank
+  // slip in the box is the worst possible outcome: the picker packs nothing
+  // and nobody finds out until the buyer complains.
+  const lines =
+    order.lines.length > 0
+      ? order.lines.map((l) => ({
+          sku: l.sku,
+          name: l.name,
+          soldPrice: l.soldPrice,
+          storageLocation: l.item?.storageLocation ?? null,
+        }))
+      : order.items;
   const total = lines.reduce((s, i) => s + (num(i.soldPrice) ?? 0), 0);
   const ship = [order.shipToName, order.shipToLine1, order.shipToLine2,
     [order.shipToCity, order.shipToState, order.shipToPostal].filter(Boolean).join(", "),

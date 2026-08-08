@@ -1,5 +1,13 @@
 // Pure input-parsing helpers (no server-only imports, unit-testable).
 
+/**
+ * Column ceilings. Decimal(12,2) holds ten integer digits, Decimal(8,2) six.
+ * A value above these reaches Postgres as a numeric overflow, which surfaces
+ * as a 500 with the raw query in it rather than "that number is too big".
+ */
+export const MAX_MONEY = 9_999_999_999.99;
+export const MAX_MEASURE = 999_999.99;
+
 export function parseMoney(v: unknown): number | null {
   if (v === null || v === undefined) return null;
   if (typeof v === "string" && v.trim() === "") return null;

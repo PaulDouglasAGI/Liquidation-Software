@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { apiUser, badRequest, notFound, parseCount, parseDate, parseMoney, serverError, unauthorized } from "@/lib/api";
 import { CATEGORIES, CONDITION_GRADES, PALLET_STATUSES } from "@/lib/constants";
-import { recalcPalletStatus } from "@/lib/pallets";
+import { recalcPalletStatus, spreadPalletCost } from "@/lib/pallets";
 import { checkPalletDeletion } from "@/lib/palletStatus";
 import { logActivity } from "@/lib/activity";
 
@@ -150,16 +150,17 @@ export async function POST(req: NextRequest, { params }: Params) {
     const pallet = await prisma.pallet.findUnique({ where: { id }, include: { items: { select: { id: true } } } });
     if (!pallet) return notFound("Pallet not found");
     if (pallet.items.length === 0) return badRequest("Pallet has no items");
-    const per = Math.round((pallet.totalCost.toNumber() / pallet.items.length) * 100) / 100;
+    // Allocated to the cent, so the unit costs add back up to what was paid.
     // SOLD items keep the cost they were booked at: rewriting it would change
     // the margin on a closed period that has already been reported.
-    const { count } = await prisma.item.updateMany({
-      where: { palletId: id, status: { not: "SOLD" } },
-      data: { ourCost: per },
-    });
-    await recalcPalletStatus(id);
-    const skipped = pallet.items.length - count;
-    return NextResponse.json({ ok: true, perItemCost: per, updated: count, skippedSold: skipped });
+    const soldCount = await prisma.item.count({ where: { palletId: id, status: "SOLD" } });
+    await prisma.$transaction(async (tx) => {
+      await spreadPalletCost(id, tx);
+      await recalcPalletStatus(id, tx);
+    }, { timeout: 30_000 });
+    const updated = pallet.items.length - soldCount;
+    const per = Math.round((pallet.totalCost.toNumber() / pallet.items.length) * 100) / 100;
+    return NextResponse.json({ ok: true, perItemCost: per, updated, skippedSold: soldCount });
   } catch (e) {
     return serverError(e);
   }

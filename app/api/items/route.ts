@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { apiUser, badRequest, notFound, parseMoney, serverError, unauthorized } from "@/lib/api";
 import { createItemsWithSkus } from "@/lib/skus";
 import { normalizeBrand } from "@/lib/parse";
-import { recalcPalletStatus } from "@/lib/pallets";
+import { recalcPalletStatus, spreadPalletCost } from "@/lib/pallets";
 import { getSettingNum } from "@/lib/settings";
 import { CATEGORIES, CONDITIONS } from "@/lib/constants";
 import { logActivity } from "@/lib/activity";
@@ -69,14 +69,11 @@ export async function POST(req: NextRequest) {
     const first = await createItemsWithSkus(palletId, data, qty);
 
     if (explicitCost === null) {
-      const total = await prisma.item.count({ where: { palletId } });
-      const per = Math.round((pallet.totalCost.toNumber() / total) * 100) / 100;
-      // Only unlisted stock: once an item is listed or sold its cost is
-      // settled — listings keep their margin, P&L history stays put.
-      await prisma.item.updateMany({
-        where: { palletId, status: "IN_STOCK" },
-        data: { ourCost: per },
-      });
+      // Same rule as manifest import: everything not yet SOLD takes a share.
+      // Re-spreading only IN_STOCK here meant intake and import allocated the
+      // same pallet cost differently, so which screen you added a unit on
+      // changed the COGS on units you added yesterday.
+      await spreadPalletCost(palletId);
     }
     await recalcPalletStatus(palletId);
     logActivity(user.name, "item.create", qty > 1 ? `${first.sku} ×${qty} — ${name}` : `${first.sku} — ${name}`);
