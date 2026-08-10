@@ -5,6 +5,8 @@ import { accuracyNote, type GroupPerformance } from "@/lib/lotPerformanceMath";
 import { money, pct, dateStr } from "@/lib/format";
 import { label } from "@/lib/constants";
 import { Stat, panelCls, thCls, tdCls, monoCls } from "@/components/ui";
+import { getBuyNextAndRotation } from "@/lib/buyNext";
+import BuyNextPanel from "@/components/BuyNextPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -69,14 +71,30 @@ function GroupTable({ title, blurb, rows }: { title: string; blurb: string; rows
 
 export default async function LotInsightsPage() {
   await requireUser();
-  const [ins, people] = await Promise.all([lotInsights(), hoursByUser()]);
+  const [ins, people, both] = await Promise.all([lotInsights(), hoursByUser(), getBuyNextAndRotation()]);
+  const { buyNext, rotation } = both;
 
   const ranked = ins.byCategory.filter((c) => c.profitPerHour !== null);
   const best = ranked[0];
   const worst = ranked.length > 1 ? ranked[ranked.length - 1] : null;
 
+  const cuts = [
+    { key: "catgrade", title: "Category × grade", rows: buyNext.byCategoryGrade },
+    { key: "cat", title: "Category", rows: buyNext.byCategory },
+    { key: "grade", title: "Condition grade", rows: buyNext.byGrade },
+    { key: "supplier", title: "Supplier", rows: buyNext.bySupplier },
+    { key: "brand", title: "Brand", rows: buyNext.byBrand },
+  ];
+
   return (
     <div className="space-y-3">
+      <BuyNextPanel
+        cuts={cuts}
+        houseReturnPct={buyNext.houseReturnPct}
+        quarters={rotation.quarters}
+        curves={rotation.curves}
+        totalUnits={buyNext.totalUnits}
+      />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-base font-semibold text-zinc-100">What should we buy next?</h1>
         <Link href="/performance" className="text-[13px] text-accent hover:underline">← All lots</Link>
