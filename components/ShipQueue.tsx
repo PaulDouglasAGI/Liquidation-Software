@@ -313,6 +313,21 @@ export default function ShipQueue({
                 >
                   Mark shipped
                 </button>
+                {/* Collected in person: there is no tracking number to type, so
+                    requiring one left every local pickup stuck in the queue
+                    for good — counted as late, work that never clears. */}
+                <button
+                  className={btnCls}
+                  disabled={busy === o.id}
+                  title="Buyer collected it — close without a tracking number"
+                  onClick={() => {
+                    if (confirm(`${o.orderNumber} was collected in person. Close it?`)) {
+                      void patch(o.id, { status: "SHIPPED", carrier: "Collected in person" });
+                    }
+                  }}
+                >
+                  Picked up
+                </button>
                 {o.carrier ? <span className="text-[12px] text-muted">{o.carrier}</span> : null}
 
                 <a className={btnCls + " ml-auto"} href={`/ship/${o.id}/slip`} target="_blank" rel="noreferrer">

@@ -27,7 +27,11 @@ export async function computeInsights() {
       where: { status: "LISTED" },
       select: { id: true, sku: true, name: true, dateListed: true, sellPrice: true, ourCost: true, platform: true },
     }),
-    prisma.item.count({ where: { status: "RETURNED" } }),
+    // Counted by history, not by current status. A return that has been put
+    // back on the shelf is still a return; counting only units sitting in
+    // RETURNED meant the rate fell back to zero as soon as anyone dealt with
+    // them, which is exactly when it stops being visible and starts mattering.
+    prisma.item.count({ where: { dateReturned: { not: null } } }),
   ]);
 
   const sold = soldRaw.map((i) => ({

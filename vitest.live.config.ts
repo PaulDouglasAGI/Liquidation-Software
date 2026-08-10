@@ -7,6 +7,11 @@ export default defineConfig({
   test: {
     include: ["tests/**/*.live.test.ts"],
     environment: "node",
+    // One file at a time, against one real database. Run in parallel and the
+    // consistency check reads another file's half-built scratch rows and
+    // reports the test harness as a data fault.
+    fileParallelism: false,
+    sequence: { shuffle: false },
   },
   resolve: {
     alias: {

@@ -128,8 +128,19 @@ export async function POST(req: NextRequest) {
           break;
         }
         case "changeLocation": {
+          // Clearing a bin has to be asked for. Falling back to null on a
+          // missing or blank location meant any malformed call wiped the bin
+          // off every selected unit and answered ok — a mistyped payload, a
+          // stale client, or a blank box on 300 selected rows silently erased
+          // the map of where the stock physically is, with no undo.
           const location = typeof payload.location === "string" ? payload.location.trim() : "";
-          const res = await tx.item.updateMany({ where: { id: { in: ids } }, data: { storageLocation: location || null } });
+          if (!location && payload.clear !== true) {
+            throw new BadAction("Pick a location, or pass clear:true to remove the location");
+          }
+          const res = await tx.item.updateMany({
+            where: { id: { in: ids } },
+            data: { storageLocation: location || null },
+          });
           updated = res.count;
           break;
         }

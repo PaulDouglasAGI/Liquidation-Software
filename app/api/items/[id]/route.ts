@@ -134,8 +134,11 @@ export async function PATCH(req: NextRequest, { params }: Params) {
         if (b.soldPrice === undefined || b.soldPrice === "") data.soldPrice = null;
         if (b.feesAmount === undefined || b.feesAmount === "") data.feesAmount = null;
         if (b.shippingCost === undefined || b.shippingCost === "") data.shippingCost = null;
-        data.dateReturned = null;
-        if (b.returnReason === undefined) data.returnReason = null;
+        // dateReturned and returnReason deliberately survive. Clearing them
+        // meant that putting a return back on the shelf — the normal thing to
+        // do with one — erased the fact that it ever came back. Return rate
+        // read 0.0% on a business taking returns on 3% of sales, and nobody
+        // could ask which supplier or category comes back.
       }
       if (b.status === "RETURNED" && existing.status !== "RETURNED") {
         // Sale reversal: the item drops out of SOLD-based revenue by status;

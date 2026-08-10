@@ -66,6 +66,17 @@ export async function POST(req: NextRequest) {
     // Defaults to now, so the common case is lot + hours and nothing else.
     const date = parseDate(b?.date) ?? new Date();
 
+    // Whose hours these are. A supervisor typing up the crew's timesheet at
+    // the end of the day is the normal case, and hard-coding the signed-in
+    // user credited every hour to whoever did the typing — so "hours by
+    // person", and every profit-per-hour split by worker, described one person
+    // doing all the work. Named worker wins; the signed-in user is the default.
+    const workerName = typeof b?.userName === "string" ? b.userName.trim() : "";
+    const worker = workerName
+      ? await prisma.user.findFirst({ where: { name: workerName }, select: { id: true, name: true } })
+      : null;
+    if (workerName && !worker) return badRequest(`No team member called "${workerName}"`);
+
     const lot = await prisma.pallet.findUnique({
       where: { id: palletId },
       select: { id: true, palletCode: true },
@@ -75,8 +86,8 @@ export async function POST(req: NextRequest) {
     const entry = await prisma.laborEntry.create({
       data: {
         palletId: lot.id,
-        userId: user.id,
-        userName: user.name,
+        userId: worker?.id ?? user.id,
+        userName: worker?.name ?? user.name,
         date,
         hours,
         activity,
@@ -84,7 +95,10 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    logActivity(user.name, "labor.log", `${hours}h ${activity} on ${lot.palletCode}`);
+    logActivity(
+      user.name, "labor.log",
+      `${hours}h ${activity} on ${lot.palletCode}${worker && worker.name !== user.name ? ` for ${worker.name}` : ""}`
+    );
 
     // Return the running total so the phone can confirm the save landed
     // without a second round trip.

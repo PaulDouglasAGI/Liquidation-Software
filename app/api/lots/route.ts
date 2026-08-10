@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { apiUser, badRequest, parseMoney, serverError, unauthorized } from "@/lib/api";
 import { formatCode, maxSuffix } from "@/lib/skuFormat";
+import { lockCounter } from "@/lib/skus";
 import { isUniqueViolation } from "@/lib/skus";
 import { priceLot, type LotCandidate } from "@/lib/lotMath";
 import { feeRateFor } from "@/lib/fees";
@@ -61,6 +62,10 @@ export async function POST(req: NextRequest) {
     for (let attempt = 0; ; attempt++) {
       try {
         const lot = await prisma.$transaction(async (tx) => {
+          // Serialise the bundle-code counter. Read-max-then-write lost half
+          // its writes at 8 concurrent creates, each a raw unique-constraint
+          // 500 rather than a bundle.
+          await lockCounter(tx, "lot-code");
           const existing = await tx.lot.findMany({
             where: { lotCode: { startsWith: prefix } },
             select: { lotCode: true },

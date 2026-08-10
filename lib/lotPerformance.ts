@@ -40,6 +40,8 @@ const lotSelect = {
       dateListed: true,
       dateSold: true,
       soldPrice: true,
+      feesAmount: true,
+      shippingCost: true,
     },
   },
   labor: {
@@ -84,6 +86,10 @@ function toInput(p: LotRow): LotInput {
       listedDate: i.dateListed,
       soldDate: i.dateSold,
       salePrice: num(i.soldPrice),
+      // Commission and postage come out of the sale price before any of it is
+      // profit, so the lot metrics have to see them.
+      fees: num(i.feesAmount),
+      shipping: num(i.shippingCost),
     })),
     labor: p.labor.map((l) => ({
       hours: l.hours.toNumber(),

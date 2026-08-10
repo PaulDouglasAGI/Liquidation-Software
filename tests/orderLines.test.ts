@@ -56,3 +56,25 @@ describe("pallet cost allocation — unit costs must add up to what was paid", (
     expect(splitEvenly(2450, 0)).toEqual([]);
   });
 });
+
+
+describe("lot profit must be net of what never reaches the bank", () => {
+  // A simulated trading period: $91,898 of sales off $20,700 of stock, with
+  // $11,009 of commission and $6,128 of postage paid out along the way.
+  const revenue = 91898.01, fees = 11008.83, postage = 6128.27, cost = 20700;
+
+  it("subtracts commission and postage, not just the purchase price", () => {
+    const gross = revenue - cost;
+    const net = revenue - fees - postage - cost;
+    expect(gross).toBeCloseTo(71198.01, 2);
+    expect(net).toBeCloseTo(54060.91, 2);
+    // The old figure overstated the master buying metric by a quarter.
+    expect((gross - net) / net).toBeGreaterThan(0.3);
+  });
+
+  it("profit per hour inherits the error", () => {
+    const hours = 100.5;
+    expect((revenue - cost) / hours).toBeCloseTo(708.44, 2);
+    expect((revenue - fees - postage - cost) / hours).toBeCloseTo(537.92, 2);
+  });
+});

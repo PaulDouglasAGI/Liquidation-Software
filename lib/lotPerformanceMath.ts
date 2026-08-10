@@ -67,6 +67,10 @@ export interface LotUnit {
   listedDate: Date | null;
   soldDate: Date | null;
   salePrice: number | null;
+  /** Marketplace commission on the sale. Never reaches the bank. */
+  fees?: number | null;
+  /** Postage actually paid to get it to the buyer. */
+  shipping?: number | null;
 }
 
 /** One logged work session. */
@@ -118,9 +122,22 @@ export interface LotPerformance {
   fees: number;
   /** totalCost − fees: what the lot itself went for. */
   purchasePrice: number;
-  /** Everything the lot's units have sold for so far. */
+  /** Everything the lot's units have sold for so far, before deductions. */
   revenue: number;
-  /** revenue − totalCost. Negative until the lot pays for itself. */
+  /** Marketplace commission taken out of that revenue. */
+  feesPaid: number;
+  /** Postage paid out to deliver it. */
+  shippingPaid: number;
+  /**
+   * What the lot actually made: revenue − fees − postage − totalCost.
+   *
+   * This used to be revenue − totalCost, which on a real trading period read
+   * 29% high ($71,198 against a true $55,228) because a seventh of revenue
+   * goes straight back out in commission and postage. It is the number behind
+   * profit-per-hour, the ranking on "what should we buy next", and the
+   * estimate-accuracy note that tells the owner to bid harder — so an
+   * overstatement here is money overpaid at the next auction.
+   */
   profit: number;
 
   // ── Metric 1: profit per labor hour (the master metric) ──────────────
@@ -173,10 +190,14 @@ export function analyzeLot(lot: LotInput): LotPerformance {
 
   let revenueC = 0, floorC = 0, specC = 0, unclassC = 0;
   let soldUnits = 0;
+  let feesC = 0;
+  let shippingC = 0;
   for (const u of lot.units) {
     if (u.soldDate == null || u.salePrice == null) continue;
     const c = cents(u.salePrice);
     revenueC += c;
+    feesC += cents(u.fees ?? 0);
+    shippingC += cents(u.shipping ?? 0);
     soldUnits++;
     if (u.valueClass === "FLOOR") floorC += c;
     else if (u.valueClass === "SPECULATIVE") specC += c;
@@ -184,7 +205,7 @@ export function analyzeLot(lot: LotInput): LotPerformance {
   }
 
   const totalCostC = cents(lot.totalCost);
-  const profitC = revenueC - totalCostC;
+  const profitC = revenueC - feesC - shippingC - totalCostC;
 
   // Hours in hundredths, so a hundred half-hour entries still sum exactly.
   const hoursH = lot.labor.reduce((s, l) => s + Math.round(l.hours * 100), 0);
@@ -243,6 +264,8 @@ export function analyzeLot(lot: LotInput): LotPerformance {
     fees: money2(lot.fees),
     purchasePrice: fromCents(totalCostC - cents(lot.fees)),
     revenue,
+    feesPaid: fromCents(feesC),
+    shippingPaid: fromCents(shippingC),
     profit: fromCents(profitC),
 
     hours,
