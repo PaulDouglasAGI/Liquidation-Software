@@ -209,6 +209,36 @@ export async function checkInvariants(db: Db = prisma): Promise<Violation[]> {
     });
   }
 
+  // ---- Adverts vs stock ---------------------------------------------------
+
+  // The expensive one: an advert still live for a unit that is gone. A second
+  // buyer pays for stock that is already in someone else's box, and it costs
+  // the refund, the return postage and a mark on the seller account.
+  const liveOnDeadStock = await db.listing.findMany({
+    where: { endedAt: null, item: { status: { in: ["SOLD", "SCRAPPED"] } } },
+    select: { channel: true, needsTakedownAt: true, item: { select: { sku: true, status: true } } },
+  });
+  if (liveOnDeadStock.length) {
+    const queued = liveOnDeadStock.filter((l) => l.needsTakedownAt != null);
+    const unqueued = liveOnDeadStock.filter((l) => l.needsTakedownAt == null);
+    if (unqueued.length) {
+      v.push({
+        rule: "listing.live-on-sold-stock",
+        severity: "error",
+        detail: "Adverts still live for stock that has sold or been scrapped, and NOT queued for takedown — nothing will tell anyone to pull them",
+        subjects: cap(unqueued.map((l) => `${l.item.sku} on ${l.channel} (${l.item.status})`)),
+      });
+    }
+    if (queued.length) {
+      v.push({
+        rule: "listing.awaiting-takedown",
+        severity: "warn",
+        detail: "Adverts queued for takedown but not yet pulled down — a second buyer can still purchase these",
+        subjects: cap(queued.map((l) => `${l.item.sku} on ${l.channel}`)),
+      });
+    }
+  }
+
   // ---- Money --------------------------------------------------------------
 
   // Unit costs must add back up to what the pallet cost. Sold units keep the

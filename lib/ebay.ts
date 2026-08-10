@@ -306,6 +306,63 @@ export interface EbayListingInput {
 }
 
 /** Create a fixed-price eBay listing via the Trading API. Returns the eBay item ID. */
+/**
+ * Ends a live eBay listing.
+ *
+ * The counterpart to addFixedPriceItem, and the reason it exists: a unit
+ * advertised on eBay and Facebook at once that sells on Facebook leaves the
+ * eBay listing up, and the next buyer purchases stock that is already in
+ * someone else's box. That costs the refund, the postage, and a defect on the
+ * seller account.
+ *
+ * Returns true when the listing is down — including when eBay says it was
+ * already ended, which is a success from the warehouse's point of view.
+ */
+export async function endFixedPriceItem(itemId: string, reason = "NotAvailable"): Promise<boolean> {
+  const { appId, certId, devId, authToken } = await creds();
+  const oauthToken = await getUserAccessToken().catch(() => null);
+  if (!appId || !certId || !devId || (!oauthToken && !authToken)) {
+    throw new EbayConfigError("eBay is not connected, so its listings cannot be ended automatically.");
+  }
+  const requesterCredentials = oauthToken
+    ? ""
+    : `<RequesterCredentials><eBayAuthToken>${xmlEscape(authToken)}</eBayAuthToken></RequesterCredentials>`;
+
+  const xml = `<?xml version="1.0" encoding="utf-8"?>
+<EndFixedPriceItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+  ${requesterCredentials}
+  <ErrorLanguage>en_US</ErrorLanguage>
+  <WarningLevel>High</WarningLevel>
+  <ItemID>${xmlEscape(itemId)}</ItemID>
+  <EndingReason>${xmlEscape(reason)}</EndingReason>
+</EndFixedPriceItemRequest>`;
+
+  const res = await fetch(hosts().trading, {
+    method: "POST",
+    headers: {
+      "X-EBAY-API-COMPATIBILITY-LEVEL": "1193",
+      "X-EBAY-API-CALL-NAME": "EndFixedPriceItem",
+      "X-EBAY-API-SITEID": "0",
+      "X-EBAY-API-APP-NAME": appId,
+      "X-EBAY-API-DEV-NAME": devId,
+      ...(oauthToken ? { "X-EBAY-API-IAF-TOKEN": oauthToken } : {}),
+      "X-EBAY-API-CERT-NAME": certId,
+      "Content-Type": "text/xml",
+    },
+    body: xml,
+    signal: AbortSignal.timeout(30_000),
+  });
+  const body = await res.text();
+  const ack = body.match(/<Ack>(.*?)<\/Ack>/)?.[1];
+  if (ack === "Success" || ack === "Warning") return true;
+  // 1047 "Auction already closed" and 1013 "not found" both mean the advert is
+  // not live, which is the outcome we wanted.
+  const code = body.match(/<ErrorCode>(\d+)<\/ErrorCode>/)?.[1];
+  if (code === "1047" || code === "1013") return true;
+  const err = body.match(/<LongMessage>(.*?)<\/LongMessage>/)?.[1] ?? `HTTP ${res.status}`;
+  throw new Error(`Could not end eBay listing ${itemId}: ${err}`);
+}
+
 export async function addFixedPriceItem(input: EbayListingInput): Promise<{ itemId: string; url: string }> {
   const { appId, certId, devId, authToken } = await creds();
   // Prefer the OAuth connection (Settings → Connect eBay); fall back to a

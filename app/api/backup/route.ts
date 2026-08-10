@@ -18,7 +18,7 @@ export async function GET() {
   if (owner instanceof NextResponse) return owner;
 
   const [pallets, items, expenses, supplierPurchases, settings, templates, locations, users,
-         orders, lots, countSessions, countScans, savedViews, laborEntries, orderLines] =
+         orders, lots, countSessions, countScans, savedViews, laborEntries, orderLines, listings] =
     await Promise.all([
       prisma.pallet.findMany({ orderBy: { palletCode: "asc" } }),
       prisma.item.findMany({ orderBy: { sku: "asc" } }),
@@ -42,11 +42,16 @@ export async function GET() {
       // at the order holding a unit right now, so a backup without these loses
       // the contents of every order a returned unit was later resold off.
       prisma.orderLine.findMany({ orderBy: { createdAt: "asc" } }),
+      // v10. Where each unit is advertised. Without these a restore reopens
+      // every advert that had been pulled down, and the takedown queue — the
+      // thing standing between a sold unit and a second buyer — comes back
+      // empty.
+      prisma.listing.findMany({ orderBy: { createdAt: "asc" } }),
     ]);
 
   const backup = {
     app: "liquidation-ops",
-    version: 5,
+    version: 6,
     exportedAt: new Date().toISOString(),
     counts: {
       pallets: pallets.length, items: items.length, expenses: expenses.length,
@@ -70,6 +75,7 @@ export async function GET() {
     savedViews: toPlain(savedViews),
     laborEntries: toPlain(laborEntries),
     orderLines: toPlain(orderLines),
+    listings: toPlain(listings),
   };
 
   return new Response(JSON.stringify(backup, null, 2), {

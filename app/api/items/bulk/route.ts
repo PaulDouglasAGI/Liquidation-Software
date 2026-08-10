@@ -8,6 +8,7 @@ import { getFeeRates } from "@/lib/settings";
 import { addOrderLine, nextOrderNumber } from "@/lib/orders";
 import { shipByFrom } from "@/lib/fulfillmentMath";
 import { DUD_REASONS, VALUE_CLASSES } from "@/lib/constants";
+import { takeDownOtherListings, type Channel } from "@/lib/listings";
 
 /** Thrown to abort the transaction with a 400 rather than a 500. */
 class BadAction extends Error {}
@@ -39,6 +40,11 @@ export async function POST(req: NextRequest) {
     // Read fee rates before opening the transaction — it's an unrelated lookup
     // and holding the transaction open for it only adds contention.
     const rates = action === "markSold" ? await getFeeRates() : null;
+    // Collected inside the transaction, acted on after it commits: pulling
+    // adverts calls a marketplace API and must not hold a write lock open.
+    let soldItemIds: string[] = [];
+    let soldChannel: Channel | null = null;
+    let scrappedIds: string[] = [];
 
     const { updated, touchedPallets, orderNumber } = await prisma.$transaction(async (tx) => {
       const items = await tx.item.findMany({ where: { id: { in: ids } } });
@@ -99,6 +105,8 @@ export async function POST(req: NextRequest) {
             updated++;
           }
           orderNumber = order.orderNumber;
+          soldItemIds = items.map((i) => i.id);
+          soldChannel = (typeof payload.platform === "string" ? payload.platform : null) as Channel | null;
           break;
         }
         case "markListed": {
@@ -150,6 +158,7 @@ export async function POST(req: NextRequest) {
             data: { status: "SCRAPPED", orderRecordId: null, lotId: null },
           });
           updated = res.count;
+          scrappedIds = ids;
           break;
         }
         // Tagging 37 units one at a time is how a metric stops getting filled
@@ -250,8 +259,17 @@ export async function POST(req: NextRequest) {
       return { updated, touchedPallets, orderNumber };
     }, TX_OPTS);
 
+    // Adverts come down after the write commits. A unit that has just been
+    // sold or scrapped must not stay purchasable anywhere else.
+    const takedowns = await takeDownOtherListings([...soldItemIds, ...scrappedIds], soldChannel).catch(() => []);
+    const stillUp = takedowns.filter((t) => !t.ok);
+
     if (updated > 0) logActivity(user.name, "items.bulk", `${action}: ${updated} item(s)`);
-    return NextResponse.json({ ok: true, updated, pallets: touchedPallets.length, orderNumber });
+    return NextResponse.json({
+      ok: true, updated, pallets: touchedPallets.length, orderNumber,
+      // Surfaced so the operator is told immediately, not just via the queue.
+      listingsStillUp: stillUp.map((t) => `${t.sku} on ${t.channel}`),
+    });
   } catch (e) {
     if (e instanceof BadAction) return badRequest(e.message);
     return serverError(e);

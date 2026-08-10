@@ -43,6 +43,9 @@ export async function POST(req: NextRequest) {
     // v9. Older backups have none; the fallback below rebuilds them from items
     // so an upgrade from an old file does not restore empty packing slips.
     const orderLines = asArray(b.orderLines);
+    // v10. Older backups have none — the adverts simply are not known, which
+    // is honest; inventing them would be worse.
+    const listings = asArray(b.listings);
     const savedViews = asArray(b.savedViews);
     // v8. Absent from older backups, which just means no hours to restore.
     const laborEntries = asArray(b.laborEntries);
@@ -91,6 +94,7 @@ export async function POST(req: NextRequest) {
     await prisma.$transaction(
       async (tx) => {
         // Delete children before parents; recreate in the reverse order.
+        await tx.listing.deleteMany();
         await tx.orderLine.deleteMany();
         await tx.countScan.deleteMany();
         await tx.countSession.deleteMany();
@@ -132,6 +136,10 @@ export async function POST(req: NextRequest) {
         if (countSessions.length) await tx.countSession.createMany({ data: countSessions as unknown as Prisma.CountSessionCreateManyInput[] });
         if (countScans.length) await tx.countScan.createMany({ data: countScans as unknown as Prisma.CountScanCreateManyInput[] });
         if (savedViews.length) await tx.savedView.createMany({ data: savedViews as unknown as Prisma.SavedViewCreateManyInput[] });
+        const restorableListings = listings.filter((l) => itemIds.has(String(l.itemId)));
+        if (restorableListings.length) {
+          await tx.listing.createMany({ data: restorableListings as unknown as Prisma.ListingCreateManyInput[] });
+        }
         if (expenses.length) await tx.expense.createMany({ data: expenses as unknown as Prisma.ExpenseCreateManyInput[] });
         if (purchases.length) await tx.supplierPurchase.createMany({ data: purchases as unknown as Prisma.SupplierPurchaseCreateManyInput[] });
 

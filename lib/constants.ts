@@ -37,6 +37,10 @@ export const ITEM_STATUSES = ["IN_STOCK", "LISTED", "RESERVED", "SOLD", "RETURNE
 export type ItemStatus = (typeof ITEM_STATUSES)[number];
 
 export const PLATFORMS = ["EBAY", "AMAZON", "FACEBOOK", "OTHER"] as const;
+
+/** Where a unit is advertised, as opposed to where a sale happened. */
+export const LISTING_CHANNELS = ["EBAY", "AMAZON", "FACEBOOK", "OTHER"] as const;
+export type ListingChannelValue = (typeof LISTING_CHANNELS)[number];
 export type Platform = (typeof PLATFORMS)[number];
 
 export const ORDER_STATUSES = ["AWAITING_PICK", "PICKED", "PACKED", "SHIPPED", "CANCELLED"] as const;

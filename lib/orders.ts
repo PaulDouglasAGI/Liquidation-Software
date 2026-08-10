@@ -6,6 +6,7 @@ import { isUniqueViolation, lockCounter } from "./skus";
 import { shipByFrom, DEFAULT_HANDLING_DAYS } from "./fulfillmentMath";
 import { estimateFees } from "./fees";
 import { getFeeRates } from "./settings";
+import { takeDownOtherListings, type Channel } from "./listings";
 
 type Db = Prisma.TransactionClient | typeof prisma;
 
@@ -89,7 +90,7 @@ export async function createOrder(input: NewOrderInput) {
 
   for (let attempt = 0; ; attempt++) {
     try {
-      return await prisma.$transaction(async (tx) => {
+      const created = await prisma.$transaction(async (tx) => {
         const soldAt = input.soldAt ?? new Date();
         const platform = input.platform ?? null;
 
@@ -161,8 +162,15 @@ export async function createOrder(input: NewOrderInput) {
           });
           await addOrderLine(tx, order.id, item, soldPrice, fees);
         }
-        return order;
+        return { order, itemIds: items.map((i) => i.id) };
       }, { timeout: 30_000 });
+
+      // Every other advert for these units has to come down, now. Deliberately
+      // outside the transaction: it calls a marketplace API, and a slow or
+      // broken eBay must never roll back a sale that really happened. Anything
+      // that fails stays in the takedown queue for a person.
+      await takeDownOtherListings(created.itemIds, (input.platform as Channel) ?? null).catch(() => []);
+      return created.order;
     } catch (e) {
       if (e instanceof OrderConflict) throw e;
       if (isUniqueViolation(e) && attempt < 3) continue;

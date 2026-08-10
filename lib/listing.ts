@@ -5,6 +5,7 @@ import { addFixedPriceItem } from "./ebay";
 import { DEFAULT_DESCRIPTION_TEMPLATE, DEFAULT_TITLE_TEMPLATE, renderTemplate } from "./templates";
 import { recalcPalletStatus } from "./pallets";
 import { num } from "./serialize";
+import { recordListing } from "./listings";
 
 /**
  * Pushes one item to eBay as a live fixed-price listing and records the
@@ -68,6 +69,10 @@ export async function pushItemToEbay(item: Item, origin: string): Promise<{ item
       dateListed: item.dateListed ?? new Date(),
     },
   });
+  // Record WHERE it is advertised, separately from where it eventually sells.
+  // Without this the unit can go up on Facebook too and nothing knows to pull
+  // the eBay advert when one of them takes the money.
+  await recordListing(prisma, item.id, "EBAY", { externalId: itemId, url, price });
   await recalcPalletStatus(item.palletId);
   return { itemId, url };
 }

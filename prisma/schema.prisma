@@ -206,6 +206,28 @@ enum Platform {
   OTHER
 }
 
+/// Where a unit is advertised. Separate from Platform, which records where a
+/// sale eventually happened.
+enum ListingChannel {
+  EBAY
+  AMAZON
+  FACEBOOK
+  OTHER
+}
+
+/// How a listing came down, so the takedown queue can tell "we ended it" from
+/// "it sold here" from "someone still has to go and do it".
+enum ListingEndReason {
+  /// Ended through the channel's API.
+  AUTO
+  /// Staff confirmed they pulled it down by hand.
+  MANUAL
+  /// This is the channel the sale came through.
+  SOLD_HERE
+  /// Unit was scrapped or the listing was withdrawn before any sale.
+  WITHDRAWN
+}
+
 model Item {
   id              String          @id @default(cuid())
   sku             String          @unique // ITM-PAL001-001
@@ -244,6 +266,7 @@ model Item {
   /// The fulfillment record this item ships on.
   orderRecordId   String?
   orderRecord     Order?          @relation(fields: [orderRecordId], references: [id], onDelete: SetNull)
+  listings        Listing[]
   /// Set when the item has been folded into a multi-item lot listing.
   lotId           String?
   lot             Lot?            @relation(fields: [lotId], references: [id], onDelete: SetNull)
@@ -446,4 +469,38 @@ model ActivityLog {
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+}
+
+/// One advertisement of one unit on one channel.
+///
+/// A unit can be live on eBay, Amazon and Facebook Marketplace at once, and
+/// nothing used to record that. When it sold on one, the others stayed up: the
+/// next buyer purchased stock that no longer existed, which costs a refund, the
+/// postage, and a defect on the seller account. This table is what makes
+/// "where else is this advertised?" an answerable question.
+///
+/// One row per unit per channel, reused when a unit is relisted — the history
+/// that matters is on the sale, not on the advert.
+model Listing {
+  id              String            @id @default(cuid())
+  itemId          String
+  item            Item              @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  channel         ListingChannel
+  /// eBay ItemID, Amazon seller SKU. Null on Facebook, which has no id we can
+  /// capture from a text block someone pasted into a browser.
+  externalId      String?
+  url             String?
+  price           Decimal?          @db.Decimal(12, 2)
+  listedAt        DateTime          @default(now())
+  /// Null means still live and still sellable to someone.
+  endedAt         DateTime?
+  endReason       ListingEndReason?
+  /// Set when the unit sold elsewhere and this advert must come down.
+  needsTakedownAt DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@unique([itemId, channel])
+  @@index([endedAt])
+  @@index([needsTakedownAt])
 }

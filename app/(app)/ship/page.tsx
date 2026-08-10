@@ -3,6 +3,8 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { num } from "@/lib/serialize";
 import ShipQueue from "@/components/ShipQueue";
+import TakedownQueue from "@/components/TakedownQueue";
+import { pendingTakedowns } from "@/lib/listings";
 
 export const dynamic = "force-dynamic";
 
@@ -56,7 +58,24 @@ export default async function ShipPage() {
     take: 50,
   });
 
+  // Above the ship queue: an advert still up for sold stock can take a second
+  // buyer's money, which is worse than a parcel going out an hour late.
+  const takedowns = await pendingTakedowns();
+
   return (
+    <>
+      <TakedownQueue
+        rows={takedowns.map((t) => ({
+          id: t.id,
+          channel: t.channel,
+          url: t.url,
+          externalId: t.externalId,
+          needsTakedownAt: t.needsTakedownAt?.toISOString() ?? null,
+          sku: t.item.sku,
+          name: t.item.name,
+          itemStatus: t.item.status,
+        }))}
+      />
     <ShipQueue
       shippedToday={shippedToday}
       totalOpen={totalOpen}
@@ -92,5 +111,6 @@ export default async function ShipPage() {
         })),
       }))}
     />
+    </>
   );
 }

@@ -9,6 +9,7 @@ import { addOrderLine, nextOrderNumber } from "@/lib/orders";
 import { logActivity } from "@/lib/activity";
 import { LOT_STATUSES, type LotStatusValue } from "@/lib/constants";
 import { canMoveLot } from "@/lib/orderStatus";
+import { takeDownOtherListings, type Channel } from "@/lib/listings";
 
 /**
  * PATCH /api/lots/[id] — { status, soldPrice?, platform? }
@@ -90,8 +91,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         for (const palletId of palletIds) await recalcPalletStatus(palletId, tx);
       }, { timeout: 30_000 });
 
+      // Same reasoning as a single sale: every unit in the bundle is gone, so
+      // every advert for every one of them has to come down.
+      const takedowns = await takeDownOtherListings(lot.items.map((i) => i.id), platform as Channel).catch(() => []);
+      const stillUp = takedowns.filter((t) => !t.ok);
+
       logActivity(user.name, "lot.sold", `${lot.lotCode} sold for ${soldPrice}`);
-      return NextResponse.json({ ok: true, status: next, itemsSettled: lot.items.length });
+      return NextResponse.json({
+        ok: true, status: next, itemsSettled: lot.items.length,
+        listingsStillUp: stillUp.map((t) => `${t.sku} on ${t.channel}`),
+      });
     }
 
     // Undoing a bundle sale: hand every unit back to the bundle exactly as it
